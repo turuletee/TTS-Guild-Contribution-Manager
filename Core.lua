@@ -27,7 +27,15 @@ function TTSBT:OnEnable()
     self:RegisterEvent("GUILD_ROSTER_UPDATE")
     self:RegisterEvent("GUILDBANKFRAME_OPENED")
     self:RegisterEvent("GUILDBANKLOG_UPDATE")
+    self:RegisterEvent("PLAYER_LOGIN")
     self.TrackedPlayers:RequestRosterUpdate()
+end
+
+function TTSBT:PLAYER_LOGIN()
+    local n = self.HistoryPruner:Prune()
+    if n > 0 then
+        self:Print(string.format("pruned %d old week(s) from history", n))
+    end
 end
 
 function TTSBT:GUILD_ROSTER_UPDATE()
@@ -56,6 +64,7 @@ local HELP_TEXT = table.concat({
     "  |cffffff00clearmark <player>|r - clear this week's manual mark for a player",
     "  |cffffff00unpaid|r / |cffffff00owed [player]|r",
     "  |cffffff00setfirstweek <0-5>|r - pick week 1 (0=current Tue, max 5 weeks back)",
+    "  |cffffff00prune|r - delete eligible old weeks now",
 }, "\n")
 
 function TTSBT:HandleSlashCommand(input)
@@ -98,6 +107,8 @@ function TTSBT:HandleSlashCommand(input)
         self:CmdOwed(rest)
     elseif cmd == "setfirstweek" then
         self:CmdSetFirstWeek(rest)
+    elseif cmd == "prune" then
+        self:CmdPrune()
     else
         self:Print("unknown command: " .. cmd)
         self:Print(HELP_TEXT)
@@ -275,6 +286,20 @@ function TTSBT:CmdOwed(args)
     self:Print(string.format("  owed:      %s", D:FormatCopper(owed)))
     self:Print(string.format("  paid:      %s", D:FormatCopper(paid)))
     self:Print(string.format("  remaining: %s", D:FormatCopper(rem)))
+end
+
+function TTSBT:CmdPrune()
+    local W = self.WeekEngine
+    local eligible = self.HistoryPruner:GetEligibleWeeks()
+    if #eligible == 0 then
+        self:Print("nothing to prune")
+        return
+    end
+    self:Print(string.format("pruning %d week(s):", #eligible))
+    for _, ws in ipairs(eligible) do
+        self:Print("  - " .. W:FormatWeek(ws))
+    end
+    self.HistoryPruner:Prune()
 end
 
 function TTSBT:CmdSetFirstWeek(args)

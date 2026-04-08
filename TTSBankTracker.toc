@@ -13,3 +13,4 @@ WeekEngine.lua
 TrackedPlayers.lua
 BankReader.lua
 DebtEngine.lua
+HistoryPruner.lua
