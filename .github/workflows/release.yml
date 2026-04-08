@@ -1,0 +1,44 @@
+# GitHub Actions workflow that builds the addon zip whenever a version
+# tag is pushed (e.g. v1.0.1, v1.1.0). Uses the BigWigs / CurseForge
+# packager to:
+#
+#   - Honour .pkgmeta (which sets package-as: TTSGuildContributionManager
+#     so the resulting zip extracts to a folder with the correct name
+#     for WoW to recognise the addon)
+#   - Strip ignored files (.git, .github, README.md, etc.)
+#   - Upload the built zip as a GitHub release asset for that tag
+#   - OPTIONALLY upload to CurseForge if CF_API_KEY is set as a repo
+#     secret (commented out below; uncomment after creating the
+#     CurseForge project and adding the secret in repo Settings)
+#
+# Manual trigger is also enabled (workflow_dispatch) so you can run it
+# from the Actions tab against any branch/tag without having to push a
+# new tag.
+
+name: Package addon
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          # Full history is needed so the packager can derive a clean
+          # version from the tag.
+          fetch-depth: 0
+
+      - name: Build and release
+        uses: BigWigsMods/packager@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Uncomment after you create the CurseForge project, generate
+          # an API token at https://legacy.curseforge.com/account/api-tokens,
+          # and add it as a repo secret named CF_API_KEY:
+          # CF_API_KEY: ${{ secrets.CF_API_KEY }}

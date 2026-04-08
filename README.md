@@ -23,15 +23,16 @@ Two independent trackers in one addon, sharing a single roster:
 
 ## Installation
 
-1. Download the addon as a folder named exactly **`TTSGuildContributionManager`**
-   (the folder name MUST match the `.toc` file name without the extension).
+### From a GitHub Release (recommended)
 
-2. Drop the folder into your retail AddOns directory:
-
+1. Go to the [Releases page](https://github.com/turuletee/TTS-Guild-Contribution-Manager/releases)
+   and download the latest **`TTSGuildContributionManager-vX.Y.Z.zip`**
+   asset (NOT the "Source code (zip)" link — that one is named
+   incorrectly for WoW and you'd have to rename the folder by hand).
+2. Extract the zip into your retail AddOns directory:
    - **Windows:** `C:\Program Files (x86)\World of Warcraft\_retail_\Interface\AddOns\`
    - **macOS:**   `/Applications/World of Warcraft/_retail_/Interface/AddOns/`
-
-   The final path should look like:
+3. Confirm the final path looks like this:
    ```
    .../Interface/AddOns/TTSGuildContributionManager/
        TTSGuildContributionManager.toc
@@ -41,12 +42,27 @@ Two independent trackers in one addon, sharing a single roster:
        ... etc ...
        Libs/
    ```
-
-3. Launch WoW. At the character select screen, click **AddOns** in the
+4. Launch WoW. At the character select screen, click **AddOns** in the
    bottom-left and verify "TTS Guild Contribution Manager" appears and
    is enabled.
+5. Log in. You should see `TTSGuildContributionManager: loaded.` in chat.
 
-4. Log in. You should see `TTSGuildContributionManager: loaded.` in chat.
+### From CurseForge
+
+When the CurseForge project is live, install via the
+[CurseForge app](https://www.curseforge.com/download/app) or any addon
+manager that supports CurseForge — they handle the folder name
+correctly.
+
+### From the source ZIP (NOT recommended)
+
+If you download the green **Code → Download ZIP** button on the GitHub
+repo page, the zip extracts to a folder named
+`TTS-Guild-Contribution-Manager-main` because that's GitHub's
+convention. WoW won't recognise that folder name. **Rename it to
+`TTSGuildContributionManager` (no hyphens, no `-main` suffix)** before
+moving it into the AddOns directory. The release asset zip
+above does this for you, which is why it's preferred.
 
 ### Compatibility
 
