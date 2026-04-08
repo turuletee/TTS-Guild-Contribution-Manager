@@ -9,3 +9,4 @@
 Libs\embeds.xml
 
 Core.lua
+WeekEngine.lua
