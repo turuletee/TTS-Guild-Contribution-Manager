@@ -1,4 +1,4 @@
--- TTS Bank Tracker - HistoryPruner
+-- TTS Guild Contribution Manager - HistoryPruner
 -- Removes old weekly history entries that are no longer needed.
 --
 -- Retention rules (from the user spec):
@@ -17,20 +17,20 @@
 -- Pruning runs:
 --   - On PLAYER_LOGIN
 --   - When the current week rolls over (detected on the next bank scan
---     or any /ttsbt command since the addon doesn't persistently know
+--     or any /ttsgcm command since the addon doesn't persistently know
 --     when a Tuesday boundary crossed)
 
-local TTSBT = LibStub("AceAddon-3.0"):GetAddon("TTSBankTracker")
+local TTSGCM = LibStub("AceAddon-3.0"):GetAddon("TTSGuildContributionManager")
 
 local HistoryPruner = {}
-TTSBT.HistoryPruner = HistoryPruner
+TTSGCM.HistoryPruner = HistoryPruner
 
 -- Returns a list of week start timestamps that are eligible to be deleted
 -- right now (without actually deleting them). Useful for previewing.
 function HistoryPruner:GetEligibleWeeks()
-    local W = TTSBT.WeekEngine
-    local D = TTSBT.DebtEngine
-    local hist = TTSBT.db.profile.weeklyHistory
+    local W = TTSGCM.WeekEngine
+    local D = TTSGCM.DebtEngine
+    local hist = TTSGCM.db.profile.weeklyHistory
     local currentWeek = W:GetCurrentWeekStart()
     local previousWeek = W:AddWeeks(currentWeek, -1)
 
@@ -49,7 +49,7 @@ end
 
 -- Deletes eligible weeks. Returns the number deleted.
 function HistoryPruner:Prune()
-    local hist = TTSBT.db.profile.weeklyHistory
+    local hist = TTSGCM.db.profile.weeklyHistory
     local eligible = self:GetEligibleWeeks()
     for _, weekStart in ipairs(eligible) do
         hist[weekStart] = nil

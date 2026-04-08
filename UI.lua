@@ -1,4 +1,4 @@
--- TTS Bank Tracker - UI
+-- TTS Guild Contribution Manager - UI
 -- AceGUI-based windows:
 --
 --   MainWindow:   tracked-player list with paid/unpaid status, owed
@@ -10,11 +10,11 @@
 --                 search. Currently-tracked players show as checked
 --                 and clicking the checkbox toggles tracking.
 
-local TTSBT = LibStub("AceAddon-3.0"):GetAddon("TTSBankTracker")
+local TTSGCM = LibStub("AceAddon-3.0"):GetAddon("TTSGuildContributionManager")
 local AceGUI = LibStub("AceGUI-3.0")
 
 local UI = {}
-TTSBT.UI = UI
+TTSGCM.UI = UI
 
 -- ----------------------------------------------------------------------
 -- Main window
@@ -30,8 +30,8 @@ local function closeMain()
 end
 
 local function buildPlayerRow(parent, name)
-    local D = TTSBT.DebtEngine
-    local W = TTSBT.WeekEngine
+    local D = TTSGCM.DebtEngine
+    local W = TTSGCM.WeekEngine
     local currentWeek = W:GetCurrentWeekStart()
 
     local owed = D:GetOwedAtStartOfWeek(name, currentWeek)
@@ -100,7 +100,7 @@ local function buildPlayerRow(parent, name)
     untrackBtn:SetText("Untrack")
     untrackBtn:SetWidth(90)
     untrackBtn:SetCallback("OnClick", function()
-        TTSBT.TrackedPlayers:Remove(name)
+        TTSGCM.TrackedPlayers:Remove(name)
         UI:RefreshMain()
     end)
     row:AddChild(untrackBtn)
@@ -109,9 +109,9 @@ local function buildPlayerRow(parent, name)
 end
 
 local function buildMainContents(frame)
-    local W = TTSBT.WeekEngine
-    local D = TTSBT.DebtEngine
-    local TP = TTSBT.TrackedPlayers
+    local W = TTSGCM.WeekEngine
+    local D = TTSGCM.DebtEngine
+    local TP = TTSGCM.TrackedPlayers
     local currentWeek = W:GetCurrentWeekStart()
 
     frame:ReleaseChildren()
@@ -123,8 +123,8 @@ local function buildMainContents(frame)
     header:SetLayout("Flow")
 
     local weekLabel = AceGUI:Create("Label")
-    if TTSBT.db.profile.firstWeekStart then
-        local idx = W:GetWeekIndex(currentWeek, TTSBT.db.profile.firstWeekStart)
+    if TTSGCM.db.profile.firstWeekStart then
+        local idx = W:GetWeekIndex(currentWeek, TTSGCM.db.profile.firstWeekStart)
         weekLabel:SetText("|cffffff00Week " .. idx .. "|r  " .. W:FormatWeek(currentWeek))
     else
         weekLabel:SetText("|cffffff00Current week|r  " .. W:FormatWeek(currentWeek) .. "   |cffff5555(first week not set)|r")
@@ -208,8 +208,8 @@ local function buildMainContents(frame)
     scanBtn:SetText("Scan Bank Now")
     scanBtn:SetWidth(140)
     scanBtn:SetCallback("OnClick", function()
-        TTSBT.BankReader:RequestLog()
-        TTSBT:Print("requested guild bank log (must be at the bank)")
+        TTSGCM.BankReader:RequestLog()
+        TTSGCM:Print("requested guild bank log (must be at the bank)")
     end)
     bottom:AddChild(scanBtn)
 
@@ -217,8 +217,8 @@ local function buildMainContents(frame)
     pruneBtn:SetText("Prune History")
     pruneBtn:SetWidth(120)
     pruneBtn:SetCallback("OnClick", function()
-        local n = TTSBT.HistoryPruner:Prune()
-        TTSBT:Print(string.format("pruned %d week(s)", n))
+        local n = TTSGCM.HistoryPruner:Prune()
+        TTSGCM:Print(string.format("pruned %d week(s)", n))
         UI:RefreshMain()
     end)
     bottom:AddChild(pruneBtn)
@@ -238,23 +238,23 @@ function UI:OpenMain()
         return
     end
     if not AceGUI then
-        TTSBT:Print("|cffff5555AceGUI-3.0 not loaded; cannot open UI|r")
+        TTSGCM:Print("|cffff5555AceGUI-3.0 not loaded; cannot open UI|r")
         return
     end
     local frame = AceGUI:Create("Frame")
     if not frame then
-        TTSBT:Print("|cffff5555AceGUI failed to create main Frame|r")
+        TTSGCM:Print("|cffff5555AceGUI failed to create main Frame|r")
         return
     end
     mainFrame = frame
-    mainFrame:SetTitle("TTS Bank Tracker")
+    mainFrame:SetTitle("TTS Guild Contribution Manager")
     mainFrame:SetStatusText("Three Tank Strat - guild bank weekly contributions")
     mainFrame:SetWidth(900)
     mainFrame:SetHeight(620)
     mainFrame:SetCallback("OnClose", function() closeMain() end)
     local ok, err = pcall(buildMainContents, mainFrame)
     if not ok then
-        TTSBT:Print("|cffff5555UI build error:|r " .. tostring(err))
+        TTSGCM:Print("|cffff5555UI build error:|r " .. tostring(err))
     end
 end
 
@@ -262,7 +262,7 @@ function UI:RefreshMain()
     if not mainFrame then return end
     local ok, err = pcall(buildMainContents, mainFrame)
     if not ok then
-        TTSBT:Print("|cffff5555UI refresh error:|r " .. tostring(err))
+        TTSGCM:Print("|cffff5555UI refresh error:|r " .. tostring(err))
     end
 end
 
@@ -286,11 +286,11 @@ local function closePicker()
 end
 
 local function buildPickerContents(frame)
-    local TP = TTSBT.TrackedPlayers
+    local TP = TTSGCM.TrackedPlayers
     frame:ReleaseChildren()
     frame:SetLayout("List")
 
-    if not TTSBT.Compat:IsInGuild() then
+    if not TTSGCM.Compat:IsInGuild() then
         local lbl = AceGUI:Create("Label")
         lbl:SetText("\n  You are not in a guild.")
         lbl:SetFullWidth(true)
@@ -391,7 +391,7 @@ end
 safeBuildPicker = function(frame)
     local ok, err = pcall(buildPickerContents, frame)
     if not ok then
-        TTSBT:Print("|cffff5555Picker build error:|r " .. tostring(err))
+        TTSGCM:Print("|cffff5555Picker build error:|r " .. tostring(err))
     end
 end
 
@@ -401,21 +401,21 @@ function UI:OpenPicker()
         return
     end
     if not AceGUI then
-        TTSBT:Print("|cffff5555AceGUI-3.0 not loaded; cannot open picker|r")
+        TTSGCM:Print("|cffff5555AceGUI-3.0 not loaded; cannot open picker|r")
         return
     end
     local frame = AceGUI:Create("Frame")
     if not frame then
-        TTSBT:Print("|cffff5555AceGUI failed to create picker Frame|r")
+        TTSGCM:Print("|cffff5555AceGUI failed to create picker Frame|r")
         return
     end
     pickerFrame = frame
-    pickerFrame:SetTitle("TTS Bank Tracker - Add Players")
+    pickerFrame:SetTitle("TTS Guild Contribution Manager - Add Players")
     pickerFrame:SetStatusText("Pick which guild members to track")
     pickerFrame:SetWidth(640)
     pickerFrame:SetHeight(620)
     pickerFrame:SetCallback("OnClose", function() closePicker() end)
     -- Make sure we have current roster data before drawing
-    TTSBT.TrackedPlayers:RequestRosterUpdate()
+    TTSGCM.TrackedPlayers:RequestRosterUpdate()
     safeBuildPicker(pickerFrame)
 end

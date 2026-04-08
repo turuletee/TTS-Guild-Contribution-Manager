@@ -1,12 +1,12 @@
--- TTS Bank Tracker - TrackedPlayers
+-- TTS Guild Contribution Manager - TrackedPlayers
 -- Manages the set of guild members the addon is currently tracking,
 -- and exposes the live guild roster (with rank/name filtering) so the
 -- picker UI in branch 7 can build a "choose who to track" window.
 
-local TTSBT = LibStub("AceAddon-3.0"):GetAddon("TTSBankTracker")
+local TTSGCM = LibStub("AceAddon-3.0"):GetAddon("TTSGuildContributionManager")
 
 local TrackedPlayers = {}
-TTSBT.TrackedPlayers = TrackedPlayers
+TTSGCM.TrackedPlayers = TrackedPlayers
 
 -- ----------------------------------------------------------------------
 -- Tracked set (persisted in db.profile.trackedPlayers as a name->true map)
@@ -14,24 +14,24 @@ TTSBT.TrackedPlayers = TrackedPlayers
 
 function TrackedPlayers:Add(name)
     if not name or name == "" then return false end
-    TTSBT.db.profile.trackedPlayers[name] = true
+    TTSGCM.db.profile.trackedPlayers[name] = true
     return true
 end
 
 function TrackedPlayers:Remove(name)
     if not name then return false end
-    local was = TTSBT.db.profile.trackedPlayers[name] ~= nil
-    TTSBT.db.profile.trackedPlayers[name] = nil
+    local was = TTSGCM.db.profile.trackedPlayers[name] ~= nil
+    TTSGCM.db.profile.trackedPlayers[name] = nil
     return was
 end
 
 function TrackedPlayers:IsTracked(name)
-    return TTSBT.db.profile.trackedPlayers[name] == true
+    return TTSGCM.db.profile.trackedPlayers[name] == true
 end
 
 function TrackedPlayers:List()
     local out = {}
-    for name in pairs(TTSBT.db.profile.trackedPlayers) do
+    for name in pairs(TTSGCM.db.profile.trackedPlayers) do
         table.insert(out, name)
     end
     table.sort(out)
@@ -40,7 +40,7 @@ end
 
 function TrackedPlayers:Count()
     local n = 0
-    for _ in pairs(TTSBT.db.profile.trackedPlayers) do n = n + 1 end
+    for _ in pairs(TTSGCM.db.profile.trackedPlayers) do n = n + 1 end
     return n
 end
 
@@ -53,8 +53,8 @@ local rosterCacheTime = 0
 local ROSTER_CACHE_SECONDS = 15
 
 function TrackedPlayers:RequestRosterUpdate()
-    if not TTSBT.Compat:IsInGuild() then return false end
-    return TTSBT.Compat:RequestGuildRoster()
+    if not TTSGCM.Compat:IsInGuild() then return false end
+    return TTSGCM.Compat:RequestGuildRoster()
 end
 
 function TrackedPlayers:InvalidateRosterCache()
@@ -67,7 +67,7 @@ end
 --   rankIndex (number)  - exact match
 --   nameQuery (string)  - case-insensitive substring match
 function TrackedPlayers:GetRoster(filters)
-    local C = TTSBT.Compat
+    local C = TTSGCM.Compat
     if not C:IsInGuild() then return {} end
     filters = filters or {}
     local now = C:Now()

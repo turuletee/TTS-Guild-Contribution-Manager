@@ -1,4 +1,4 @@
--- TTS Bank Tracker - Compat
+-- TTS Guild Contribution Manager - Compat
 -- Centralized wrappers around WoW APIs that have moved namespaces or
 -- may not exist on a given client. Returning safe defaults instead of
 -- crashing keeps the addon usable when Blizzard renames things.
@@ -10,10 +10,10 @@
 -- file at any time, so route every WoW call through a function that
 -- checks before invoking.
 
-local TTSBT = LibStub("AceAddon-3.0"):GetAddon("TTSBankTracker")
+local TTSGCM = LibStub("AceAddon-3.0"):GetAddon("TTSGuildContributionManager")
 
 local Compat = {}
-TTSBT.Compat = Compat
+TTSGCM.Compat = Compat
 
 -- ----------------------------------------------------------------------
 -- Guild membership and roster

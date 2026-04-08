@@ -1,4 +1,4 @@
--- TTS Bank Tracker - BankReader
+-- TTS Guild Contribution Manager - BankReader
 -- Reads the guild bank money log when the user opens the guild bank,
 -- attributes deposits to weeks, and writes per-week per-player gold totals
 -- into db.profile.weeklyHistory.
@@ -31,17 +31,17 @@
 --       manualMarks  = { [playerName] = copperManuallyAttributed },
 --   }
 
-local TTSBT = LibStub("AceAddon-3.0"):GetAddon("TTSBankTracker")
+local TTSGCM = LibStub("AceAddon-3.0"):GetAddon("TTSGuildContributionManager")
 
 local BankReader = {}
-TTSBT.BankReader = BankReader
+TTSGCM.BankReader = BankReader
 
 -- ----------------------------------------------------------------------
 -- Internal helpers
 -- ----------------------------------------------------------------------
 
 local function ensureWeek(weekStart)
-    local hist = TTSBT.db.profile.weeklyHistory
+    local hist = TTSGCM.db.profile.weeklyHistory
     local week = hist[weekStart]
     if not week then
         week = { contributions = {}, manualMarks = {} }
@@ -72,7 +72,7 @@ end
 -- ----------------------------------------------------------------------
 
 function BankReader:RequestLog()
-    local C = TTSBT.Compat
+    local C = TTSGCM.Compat
     if not C:IsInGuild() then return end
     C:QueryGuildBankLog()
 end
@@ -81,12 +81,12 @@ end
 -- Safe to call repeatedly: idempotent except for the "current week is always
 -- replaced" semantics described at the top of this file.
 function BankReader:ProcessLog()
-    local C = TTSBT.Compat
+    local C = TTSGCM.Compat
     local n = C:GetNumGuildBankMoneyTransactions()
     if n == 0 then return 0 end
 
     local now = C:Now()
-    local W = TTSBT.WeekEngine
+    local W = TTSGCM.WeekEngine
     local txs = {}
 
     for i = 1, n do
@@ -148,7 +148,7 @@ end
 -- Returns total copper contributed by `name` during the week containing `weekStart`.
 -- Includes both bank deposits and any manual marks (set in branch 5).
 function BankReader:GetWeekTotal(weekStart, name)
-    local week = TTSBT.db.profile.weeklyHistory[weekStart]
+    local week = TTSGCM.db.profile.weeklyHistory[weekStart]
     if not week then return 0 end
     local fromBank = (week.contributions and week.contributions[name]) or 0
     local fromMark = (week.manualMarks and week.manualMarks[name]) or 0

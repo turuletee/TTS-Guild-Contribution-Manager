@@ -1,9 +1,9 @@
 ## Interface: 110200
-## Title: TTS Bank Tracker
+## Title: TTS Guild Contribution Manager
 ## Notes: Three Tank Strat - guild bank weekly contribution tracker
 ## Author: Nachorizo
-## Version: 0.2.1
-## SavedVariables: TTSBankTrackerDB
+## Version: 0.3.0
+## SavedVariables: TTSGuildContributionManagerDB
 ## IconTexture: Interface\Icons\INV_Misc_Coin_01
 
 Libs\embeds.xml

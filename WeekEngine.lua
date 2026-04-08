@@ -1,4 +1,4 @@
--- TTS Bank Tracker - WeekEngine
+-- TTS Guild Contribution Manager - WeekEngine
 -- Pure date math for the weekly cycle.
 --
 -- A "week" runs from Tuesday 10:00 PST -> the following Tuesday 09:59:59 PST.
@@ -8,10 +8,10 @@
 -- known anchor. This avoids any date-table-to-timestamp conversion (which is
 -- awkward in Lua because os.time interprets tables as local time).
 
-local TTSBT = LibStub("AceAddon-3.0"):GetAddon("TTSBankTracker")
+local TTSGCM = LibStub("AceAddon-3.0"):GetAddon("TTSGuildContributionManager")
 
 local WeekEngine = {}
-TTSBT.WeekEngine = WeekEngine
+TTSGCM.WeekEngine = WeekEngine
 
 -- Anchor: Tuesday 2024-01-02 18:00:00 UTC = Tuesday 2024-01-02 10:00:00 PST.
 -- Verified manually: Jan 2 2024 is a Tuesday.

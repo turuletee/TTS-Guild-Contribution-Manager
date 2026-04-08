@@ -1,4 +1,4 @@
--- TTS Bank Tracker - DebtEngine
+-- TTS Guild Contribution Manager - DebtEngine
 -- Computes how much each tracked player owes for a given week, including
 -- the compounding 1.5x penalty for unpaid prior weeks. Also handles manual
 -- marking (officer records off-bank payments) and per-week minimums.
@@ -17,10 +17,10 @@
 --
 -- All amounts in the engine are stored and computed in COPPER.
 
-local TTSBT = LibStub("AceAddon-3.0"):GetAddon("TTSBankTracker")
+local TTSGCM = LibStub("AceAddon-3.0"):GetAddon("TTSGuildContributionManager")
 
 local DebtEngine = {}
-TTSBT.DebtEngine = DebtEngine
+TTSGCM.DebtEngine = DebtEngine
 
 local COPPER_PER_GOLD = 10000
 
@@ -29,7 +29,7 @@ local COPPER_PER_GOLD = 10000
 -- ----------------------------------------------------------------------
 
 local function ensureWeek(weekStart)
-    local hist = TTSBT.db.profile.weeklyHistory
+    local hist = TTSGCM.db.profile.weeklyHistory
     local week = hist[weekStart]
     if not week then
         week = { contributions = {}, manualMarks = {} }
@@ -51,11 +51,11 @@ end
 --   3. The current global db.profile.minContribution (also in copper)
 --   4. Zero
 function DebtEngine:GetMinForWeek(weekStart)
-    local W = TTSBT.WeekEngine
-    if type(weekStart) ~= "number" then return TTSBT.db.profile.minContribution or 0 end
+    local W = TTSGCM.WeekEngine
+    if type(weekStart) ~= "number" then return TTSGCM.db.profile.minContribution or 0 end
     weekStart = W:GetWeekStart(weekStart)
-    local hist = TTSBT.db.profile.weeklyHistory
-    local firstWeek = TTSBT.db.profile.firstWeekStart
+    local hist = TTSGCM.db.profile.weeklyHistory
+    local firstWeek = TTSGCM.db.profile.firstWeekStart
     local cursor = weekStart
     -- Bound the walk so a corrupt firstWeek can't loop forever
     local guard = 0
@@ -65,21 +65,21 @@ function DebtEngine:GetMinForWeek(weekStart)
         cursor = W:AddWeeks(cursor, -1)
         guard = guard + 1
     end
-    return TTSBT.db.profile.minContribution or 0
+    return TTSGCM.db.profile.minContribution or 0
 end
 
 -- Stamps a minimum onto the current week and updates the global default
 -- so future weeks inherit it.
 function DebtEngine:SetCurrentWeekMin(copperAmount)
     if (copperAmount or 0) < 0 then return end
-    local W = TTSBT.WeekEngine
+    local W = TTSGCM.WeekEngine
     local week = ensureWeek(W:GetCurrentWeekStart())
     week.minimum = copperAmount
-    TTSBT.db.profile.minContribution = copperAmount
+    TTSGCM.db.profile.minContribution = copperAmount
 end
 
 function DebtEngine:GetCurrentWeekMin()
-    return self:GetMinForWeek(TTSBT.WeekEngine:GetCurrentWeekStart())
+    return self:GetMinForWeek(TTSGCM.WeekEngine:GetCurrentWeekStart())
 end
 
 -- ----------------------------------------------------------------------
@@ -88,7 +88,7 @@ end
 
 function DebtEngine:GetPaidForWeek(player, weekStart)
     if not player or type(weekStart) ~= "number" then return 0 end
-    local week = TTSBT.db.profile.weeklyHistory[weekStart]
+    local week = TTSGCM.db.profile.weeklyHistory[weekStart]
     if type(week) ~= "table" then return 0 end
     local fromBank = (type(week.contributions) == "table" and week.contributions[player]) or 0
     local fromMark = (type(week.manualMarks) == "table" and week.manualMarks[player]) or 0
@@ -103,10 +103,10 @@ end
 -- including any compounded carryover from earlier missed weeks.
 -- Walks forward from firstWeekStart -> weekStart, accumulating.
 function DebtEngine:GetOwedAtStartOfWeek(player, weekStart)
-    local W = TTSBT.WeekEngine
+    local W = TTSGCM.WeekEngine
     if not player or type(weekStart) ~= "number" then return 0 end
     weekStart = W:GetWeekStart(weekStart)
-    local firstWeek = TTSBT.db.profile.firstWeekStart
+    local firstWeek = TTSGCM.db.profile.firstWeekStart
     if type(firstWeek) ~= "number" or weekStart < firstWeek then return 0 end
     firstWeek = W:GetWeekStart(firstWeek)
 
@@ -138,7 +138,7 @@ end
 
 function DebtEngine:GetUnpaidPlayersForWeek(weekStart)
     local out = {}
-    for name in pairs(TTSBT.db.profile.trackedPlayers) do
+    for name in pairs(TTSGCM.db.profile.trackedPlayers) do
         if not self:IsPaidForWeek(name, weekStart) then
             table.insert(out, name)
         end
@@ -151,7 +151,7 @@ end
 -- currently-tracked players. Used by the history pruner to decide if a
 -- week is safe to delete.
 function DebtEngine:HasOutstandingDebt(weekStart)
-    for name in pairs(TTSBT.db.profile.trackedPlayers) do
+    for name in pairs(TTSGCM.db.profile.trackedPlayers) do
         if not self:IsPaidForWeek(name, weekStart) then return true end
     end
     return false
@@ -173,7 +173,7 @@ function DebtEngine:ManualMark(player, weekStart, copperAmount)
 end
 
 function DebtEngine:ClearManualMark(player, weekStart)
-    local week = TTSBT.db.profile.weeklyHistory[weekStart]
+    local week = TTSGCM.db.profile.weeklyHistory[weekStart]
     if not week or not week.manualMarks then return end
     week.manualMarks[player] = nil
 end

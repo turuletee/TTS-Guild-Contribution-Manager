@@ -1,8 +1,8 @@
--- TTS Bank Tracker (Three Tank Strat)
+-- TTS Guild Contribution Manager (Three Tank Strat)
 -- Tracks guild bank contributions on a weekly cycle (Tue 10:00 PST -> Tue 09:59 PST)
 
-local TTSBT = LibStub("AceAddon-3.0"):NewAddon("TTSBankTracker", "AceConsole-3.0", "AceEvent-3.0")
-_G.TTSBT = TTSBT -- expose for in-game debugging via /dump TTSBT
+local TTSGCM = LibStub("AceAddon-3.0"):NewAddon("TTSGuildContributionManager", "AceConsole-3.0", "AceEvent-3.0")
+_G.TTSGCM = TTSGCM -- expose for in-game debugging via /dump TTSGCM
 
 local defaults = {
     profile = {
@@ -38,17 +38,17 @@ local function validateProfile(profile)
     end
 end
 
-function TTSBT:OnInitialize()
-    self.db = LibStub("AceDB-3.0"):New("TTSBankTrackerDB", defaults, true)
+function TTSGCM:OnInitialize()
+    self.db = LibStub("AceDB-3.0"):New("TTSGuildContributionManagerDB", defaults, true)
     validateProfile(self.db.profile)
     if (self.db.profile.installTime or 0) == 0 then
         self.db.profile.installTime = time()
     end
-    self:RegisterChatCommand("ttsbt", "HandleSlashCommand")
-    self:Print("loaded. Type /ttsbt for commands.")
+    self:RegisterChatCommand("ttsgcm", "HandleSlashCommand")
+    self:Print("loaded. Type /ttsgcm for commands.")
 end
 
-function TTSBT:OnEnable()
+function TTSGCM:OnEnable()
     self:RegisterEvent("GUILD_ROSTER_UPDATE")
     self:RegisterEvent("GUILDBANKFRAME_OPENED")
     self:RegisterEvent("GUILDBANKLOG_UPDATE")
@@ -64,15 +64,15 @@ function TTSBT:OnEnable()
     end
 end
 
-function TTSBT:GUILD_ROSTER_UPDATE()
+function TTSGCM:GUILD_ROSTER_UPDATE()
     self.TrackedPlayers:InvalidateRosterCache()
 end
 
-function TTSBT:GUILDBANKFRAME_OPENED()
+function TTSGCM:GUILDBANKFRAME_OPENED()
     self.BankReader:OnGuildBankOpened()
 end
 
-function TTSBT:GUILDBANKLOG_UPDATE()
+function TTSGCM:GUILDBANKLOG_UPDATE()
     self.BankReader:OnGuildBankLogUpdate()
     if self.UI then self.UI:RefreshMain() end
 end
@@ -82,7 +82,7 @@ end
 -- ----------------------------------------------------------------------
 
 local HELP_TEXT = table.concat({
-    "|cffffff00TTS Bank Tracker commands|r:",
+    "|cffffff00TTS Guild Contribution Manager commands|r:",
     "  |cffffff00status|r / |cffffff00week|r / |cffffff00scan|r / |cffffff00history [N]|r",
     "  |cffffff00track <name>|r / |cffffff00untrack <name>|r / |cffffff00tracked|r",
     "  |cffffff00roster [rankIndex] [search]|r / |cffffff00ranks|r",
@@ -96,17 +96,17 @@ local HELP_TEXT = table.concat({
     "  |cffffff00minimap|r - toggle the minimap button visibility",
 }, "\n")
 
-function TTSBT:HandleSlashCommand(input)
+function TTSGCM:HandleSlashCommand(input)
     local ok, err = pcall(self.DispatchSlashCommand, self, input)
     if not ok then
         self:Print("|cffff5555command error:|r " .. tostring(err))
     end
 end
 
-function TTSBT:DispatchSlashCommand(input)
+function TTSGCM:DispatchSlashCommand(input)
     input = (input or ""):trim()
     if input == "" then
-        -- Bare /ttsbt opens the main window
+        -- Bare /ttsgcm opens the main window
         self.UI:ToggleMain()
         return
     end
@@ -160,16 +160,16 @@ function TTSBT:DispatchSlashCommand(input)
     end
 end
 
-function TTSBT:CmdTrack(name)
+function TTSGCM:CmdTrack(name)
     name = (name or ""):trim()
-    if name == "" then self:Print("usage: /ttsbt track <name>") return end
+    if name == "" then self:Print("usage: /ttsgcm track <name>") return end
     self.TrackedPlayers:Add(name)
     self:Print("now tracking: " .. name)
 end
 
-function TTSBT:CmdUntrack(name)
+function TTSGCM:CmdUntrack(name)
     name = (name or ""):trim()
-    if name == "" then self:Print("usage: /ttsbt untrack <name>") return end
+    if name == "" then self:Print("usage: /ttsgcm untrack <name>") return end
     if self.TrackedPlayers:Remove(name) then
         self:Print("untracked: " .. name)
     else
@@ -177,7 +177,7 @@ function TTSBT:CmdUntrack(name)
     end
 end
 
-function TTSBT:CmdListTracked()
+function TTSGCM:CmdListTracked()
     local list = self.TrackedPlayers:List()
     if #list == 0 then
         self:Print("no players tracked yet")
@@ -189,7 +189,7 @@ function TTSBT:CmdListTracked()
     end
 end
 
-function TTSBT:CmdRoster(args)
+function TTSGCM:CmdRoster(args)
     if not IsInGuild() then self:Print("not in a guild") return end
     local filters = {}
     for token in (args or ""):gmatch("%S+") do
@@ -199,7 +199,7 @@ function TTSBT:CmdRoster(args)
     end
     local roster = self.TrackedPlayers:GetRoster(filters)
     if #roster == 0 then
-        self:Print("no roster results (try /ttsbt roster after a few seconds; roster fetch is async)")
+        self:Print("no roster results (try /ttsgcm roster after a few seconds; roster fetch is async)")
         self.TrackedPlayers:RequestRosterUpdate()
         return
     end
@@ -214,7 +214,7 @@ function TTSBT:CmdRoster(args)
     end
 end
 
-function TTSBT:CmdRanks()
+function TTSGCM:CmdRanks()
     if not IsInGuild() then self:Print("not in a guild") return end
     local ranks = self.TrackedPlayers:GetRanks()
     if #ranks == 0 then
@@ -228,13 +228,13 @@ function TTSBT:CmdRanks()
     end
 end
 
-function TTSBT:CmdScan()
+function TTSGCM:CmdScan()
     if not IsInGuild() then self:Print("not in a guild") return end
     self:Print("requesting guild bank money log... (must be at the guild bank)")
     self.BankReader:RequestLog()
 end
 
-function TTSBT:CmdHistory(args)
+function TTSGCM:CmdHistory(args)
     local W = self.WeekEngine
     local D = self.DebtEngine
     local nWeeksToShow = tonumber((args or ""):match("(%d+)")) or 4
@@ -266,40 +266,40 @@ function TTSBT:CmdHistory(args)
         end
     end
     if not anyData then
-        self:Print("no contributions recorded yet. Open the guild bank or run /ttsbt scan while there.")
+        self:Print("no contributions recorded yet. Open the guild bank or run /ttsgcm scan while there.")
     end
 end
 
-function TTSBT:CmdSetMin(args)
+function TTSGCM:CmdSetMin(args)
     local g = tonumber((args or ""):match("([%d%.]+)"))
-    if not g then self:Print("usage: /ttsbt setmin <gold>") return end
+    if not g then self:Print("usage: /ttsgcm setmin <gold>") return end
     local copper = self.DebtEngine:GoldToCopper(g)
     self.DebtEngine:SetCurrentWeekMin(copper)
     self:Print(string.format("this week's minimum set to %s", self.DebtEngine:FormatCopper(copper)))
 end
 
-function TTSBT:CmdMark(args)
+function TTSGCM:CmdMark(args)
     local name, g = (args or ""):match("^(%S+)%s+([%d%.]+)$")
-    if not name or not g then self:Print("usage: /ttsbt mark <player> <gold>") return end
+    if not name or not g then self:Print("usage: /ttsgcm mark <player> <gold>") return end
     local copper = self.DebtEngine:GoldToCopper(tonumber(g))
     local W = self.WeekEngine:GetCurrentWeekStart()
     self.DebtEngine:ManualMark(name, W, copper)
     self:Print(string.format("marked %s with +%s for current week", name, self.DebtEngine:FormatCopper(copper)))
 end
 
-function TTSBT:CmdClearMark(args)
+function TTSGCM:CmdClearMark(args)
     local name = (args or ""):match("^(%S+)")
-    if not name then self:Print("usage: /ttsbt clearmark <player>") return end
+    if not name then self:Print("usage: /ttsgcm clearmark <player>") return end
     local W = self.WeekEngine:GetCurrentWeekStart()
     self.DebtEngine:ClearManualMark(name, W)
     self:Print("cleared manual mark for " .. name .. " (current week)")
 end
 
-function TTSBT:CmdUnpaid()
+function TTSGCM:CmdUnpaid()
     local W = self.WeekEngine:GetCurrentWeekStart()
     local D = self.DebtEngine
     if not self.db.profile.firstWeekStart then
-        self:Print("first tracked week not set yet. Use /ttsbt setfirstweek <0-5>")
+        self:Print("first tracked week not set yet. Use /ttsgcm setfirstweek <0-5>")
         return
     end
     local list = D:GetUnpaidPlayersForWeek(W)
@@ -316,12 +316,12 @@ function TTSBT:CmdUnpaid()
     end
 end
 
-function TTSBT:CmdOwed(args)
+function TTSGCM:CmdOwed(args)
     local D = self.DebtEngine
     local W = self.WeekEngine:GetCurrentWeekStart()
     local name = (args or ""):match("^(%S+)")
     if not name then
-        self:Print("usage: /ttsbt owed <player>")
+        self:Print("usage: /ttsgcm owed <player>")
         return
     end
     local owed = D:GetOwedAtStartOfWeek(name, W)
@@ -333,7 +333,7 @@ function TTSBT:CmdOwed(args)
     self:Print(string.format("  remaining: %s", D:FormatCopper(rem)))
 end
 
-function TTSBT:CmdPrune()
+function TTSGCM:CmdPrune()
     local W = self.WeekEngine
     local eligible = self.HistoryPruner:GetEligibleWeeks()
     if #eligible == 0 then
@@ -347,9 +347,9 @@ function TTSBT:CmdPrune()
     self.HistoryPruner:Prune()
 end
 
-function TTSBT:CmdSetFirstWeek(args)
+function TTSGCM:CmdSetFirstWeek(args)
     local n = tonumber((args or ""):match("(%d+)"))
-    if not n then self:Print("usage: /ttsbt setfirstweek <0-5> (weeks back from current)") return end
+    if not n then self:Print("usage: /ttsgcm setfirstweek <0-5> (weeks back from current)") return end
     if n < 0 or n > 5 then self:Print("must be 0-5 (max 5 weeks back from current)") return end
     local W = self.WeekEngine
     local current = W:GetCurrentWeekStart()
@@ -359,7 +359,7 @@ function TTSBT:CmdSetFirstWeek(args)
 end
 
 -- Helper for sanity-checking the WeekEngine math from in-game.
-function TTSBT:PrintWeekInfo()
+function TTSGCM:PrintWeekInfo()
     local W = self.WeekEngine
     local now = time()
     local currentStart = W:GetCurrentWeekStart()
