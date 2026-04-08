@@ -57,8 +57,8 @@ function TTSGCM:OnInitialize()
     if (self.db.profile.installTime or 0) == 0 then
         self.db.profile.installTime = time()
     end
-    self:RegisterChatCommand("ttsgcm", "HandleSlashCommand")
-    self:Print("loaded. Type /ttsgcm for commands.")
+    self:RegisterChatCommand("gcm", "HandleSlashCommand")
+    self:Print("loaded. Type /gcm for commands.")
 end
 
 function TTSGCM:OnEnable()
@@ -121,7 +121,7 @@ end
 function TTSGCM:DispatchSlashCommand(input)
     input = (input or ""):trim()
     if input == "" then
-        -- Bare /ttsgcm opens the main window
+        -- Bare /gcm opens the main window
         self.UI:ToggleMain()
         return
     end
@@ -181,14 +181,14 @@ end
 
 function TTSGCM:CmdTrack(name)
     name = (name or ""):trim()
-    if name == "" then self:Print("usage: /ttsgcm track <name>") return end
+    if name == "" then self:Print("usage: /gcm track <name>") return end
     self.TrackedPlayers:Add(name)
     self:Print("now tracking: " .. name)
 end
 
 function TTSGCM:CmdUntrack(name)
     name = (name or ""):trim()
-    if name == "" then self:Print("usage: /ttsgcm untrack <name>") return end
+    if name == "" then self:Print("usage: /gcm untrack <name>") return end
     if self.TrackedPlayers:Remove(name) then
         self:Print("untracked: " .. name)
     else
@@ -218,7 +218,7 @@ function TTSGCM:CmdRoster(args)
     end
     local roster = self.TrackedPlayers:GetRoster(filters)
     if #roster == 0 then
-        self:Print("no roster results (try /ttsgcm roster after a few seconds; roster fetch is async)")
+        self:Print("no roster results (try /gcm roster after a few seconds; roster fetch is async)")
         self.TrackedPlayers:RequestRosterUpdate()
         return
     end
@@ -285,13 +285,13 @@ function TTSGCM:CmdHistory(args)
         end
     end
     if not anyData then
-        self:Print("no contributions recorded yet. Open the guild bank or run /ttsgcm scan while there.")
+        self:Print("no contributions recorded yet. Open the guild bank or run /gcm scan while there.")
     end
 end
 
 function TTSGCM:CmdSetMin(args)
     local g = tonumber((args or ""):match("([%d%.]+)"))
-    if not g then self:Print("usage: /ttsgcm setmin <gold>") return end
+    if not g then self:Print("usage: /gcm setmin <gold>") return end
     local copper = self.DebtEngine:GoldToCopper(g)
     self.DebtEngine:SetCurrentWeekMin(copper)
     self:Print(string.format("this week's regular minimum set to %s", self.DebtEngine:FormatCopper(copper)))
@@ -299,7 +299,7 @@ end
 
 function TTSGCM:CmdSetAlchemistMin(args)
     local g = tonumber((args or ""):match("([%d%.]+)"))
-    if not g then self:Print("usage: /ttsgcm setalchmin <gold>") return end
+    if not g then self:Print("usage: /gcm setalchmin <gold>") return end
     local copper = self.DebtEngine:GoldToCopper(g)
     self.DebtEngine:SetCurrentWeekAlchemistMin(copper)
     self:Print(string.format("this week's alchemist minimum set to %s", self.DebtEngine:FormatCopper(copper)))
@@ -307,9 +307,9 @@ end
 
 function TTSGCM:CmdToggleAlchemist(args)
     local name = (args or ""):match("^(%S+)")
-    if not name then self:Print("usage: /ttsgcm alchemist <name>") return end
+    if not name then self:Print("usage: /gcm alchemist <name>") return end
     if not self.TrackedPlayers:IsTracked(name) then
-        self:Print(name .. " is not tracked. Add them first with /ttsgcm track " .. name)
+        self:Print(name .. " is not tracked. Add them first with /gcm track " .. name)
         return
     end
     local nowAlch = self.DebtEngine:ToggleAlchemist(name)
@@ -318,7 +318,7 @@ end
 
 function TTSGCM:CmdMark(args)
     local name, g = (args or ""):match("^(%S+)%s+([%d%.]+)$")
-    if not name or not g then self:Print("usage: /ttsgcm mark <player> <gold>") return end
+    if not name or not g then self:Print("usage: /gcm mark <player> <gold>") return end
     local copper = self.DebtEngine:GoldToCopper(tonumber(g))
     local W = self.WeekEngine:GetCurrentWeekStart()
     self.DebtEngine:ManualMark(name, W, copper)
@@ -327,7 +327,7 @@ end
 
 function TTSGCM:CmdClearMark(args)
     local name = (args or ""):match("^(%S+)")
-    if not name then self:Print("usage: /ttsgcm clearmark <player>") return end
+    if not name then self:Print("usage: /gcm clearmark <player>") return end
     local W = self.WeekEngine:GetCurrentWeekStart()
     self.DebtEngine:ClearManualMark(name, W)
     self:Print("cleared manual mark for " .. name .. " (current week)")
@@ -337,7 +337,7 @@ function TTSGCM:CmdUnpaid()
     local W = self.WeekEngine:GetCurrentWeekStart()
     local D = self.DebtEngine
     if not self.db.profile.firstWeekStart then
-        self:Print("first tracked week not set yet. Use /ttsgcm setfirstweek <0-5>")
+        self:Print("first tracked week not set yet. Use /gcm setfirstweek <0-5>")
         return
     end
     local list = D:GetUnpaidPlayersForWeek(W)
@@ -359,7 +359,7 @@ function TTSGCM:CmdOwed(args)
     local W = self.WeekEngine:GetCurrentWeekStart()
     local name = (args or ""):match("^(%S+)")
     if not name then
-        self:Print("usage: /ttsgcm owed <player>")
+        self:Print("usage: /gcm owed <player>")
         return
     end
     local owed = D:GetOwedAtStartOfWeek(name, W)
@@ -387,7 +387,7 @@ end
 
 function TTSGCM:CmdSetFirstWeek(args)
     local n = tonumber((args or ""):match("(%d+)"))
-    if not n then self:Print("usage: /ttsgcm setfirstweek <0-5> (weeks back from current)") return end
+    if not n then self:Print("usage: /gcm setfirstweek <0-5> (weeks back from current)") return end
     if n < 0 or n > 5 then self:Print("must be 0-5 (max 5 weeks back from current)") return end
     local W = self.WeekEngine
     local current = W:GetCurrentWeekStart()

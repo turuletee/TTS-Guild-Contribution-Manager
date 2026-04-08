@@ -17,7 +17,7 @@
 -- Pruning runs:
 --   - On PLAYER_LOGIN
 --   - When the current week rolls over (detected on the next bank scan
---     or any /ttsgcm command since the addon doesn't persistently know
+--     or any /gcm command since the addon doesn't persistently know
 --     when a Tuesday boundary crossed)
 
 local TTSGCM = LibStub("AceAddon-3.0"):GetAddon("TTSGuildContributionManager")
