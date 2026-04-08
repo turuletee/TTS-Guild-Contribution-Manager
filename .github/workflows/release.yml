@@ -26,6 +26,12 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # The packager needs write access to create the GitHub Release and
+    # upload the built zip as an asset. By default GITHUB_TOKEN only
+    # has read permissions on most repos, so we explicitly grant
+    # contents:write here.
+    permissions:
+      contents: write
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -37,7 +43,11 @@ jobs:
       - name: Build and release
         uses: BigWigsMods/packager@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The BigWigs packager script reads the GitHub auth token from
+          # GITHUB_OAUTH (NOT the more common GITHUB_TOKEN name). The
+          # automatic ${{ secrets.GITHUB_TOKEN }} value is fine here -
+          # it's just expected under a different env var name.
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
           # Uncomment after you create the CurseForge project, generate
           # an API token at https://legacy.curseforge.com/account/api-tokens,
           # and add it as a repo secret named CF_API_KEY:
