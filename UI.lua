@@ -23,16 +23,21 @@ TTSGCM.UI = UI
 -- Main window state and view router
 -- ----------------------------------------------------------------------
 --
--- Views:
+-- Top-level: a TabGroup with two tabs
+--   "consumable"  - the bank/contribution tracker (everything below)
+--   "assistance"  - placeholder for the upcoming Assistance Tracker
+--
+-- Inside the consumable tab, the view router has these states:
 --   "list"        - current week, all tracked players
 --   "detail"      - one player, ANY week (detailContext.weekStart)
---   "history"    - list of past weeks (last 5 + any with debt)
+--   "history"     - list of past weeks (last 5 + any with debt)
 --   "weekplayers" - one past week, all tracked players for that week
 --
 -- detailContext = { player, weekStart, backTo }
 -- weekContext   = { weekStart, backTo }
 
 local mainFrame = nil
+local mainTab = "consumable"
 local mainView = "list"
 local detailContext = nil
 local weekContext = nil
@@ -41,6 +46,7 @@ local function closeMain()
     if mainFrame then
         AceGUI:Release(mainFrame)
         mainFrame = nil
+        mainTab = "consumable"
         mainView = "list"
         detailContext = nil
         weekContext = nil
@@ -761,27 +767,74 @@ end
 -- View routing
 -- ----------------------------------------------------------------------
 
+-- Builds the contents of the consumable-tab container. Same dispatch
+-- logic the old buildMainContents had, just scoped to the tab's child
+-- container instead of the whole frame.
+local function buildConsumableTab(container)
+    if mainView == "detail" and detailContext and detailContext.player
+            and TTSGCM.TrackedPlayers:IsTracked(detailContext.player) then
+        buildDetailView(container, detailContext)
+    elseif mainView == "history" then
+        buildHistoryView(container)
+    elseif mainView == "weekplayers" and weekContext and weekContext.weekStart then
+        buildWeekPlayersView(container, weekContext)
+    else
+        mainView = "list"
+        detailContext = nil
+        weekContext = nil
+        buildListView(container)
+    end
+end
+
+-- Placeholder for the upcoming Assistance Tracker tab. Kept intentionally
+-- empty until the user provides the data model spec (Excel + DKP rules).
+local function buildAssistanceTab(container)
+    container:SetLayout("List")
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Assistance Tracking")
+    heading:SetFullWidth(true)
+    container:AddChild(heading)
+
+    local lbl = AceGUI:Create("Label")
+    lbl:SetFullWidth(true)
+    lbl:SetText("\n  " .. colored("Coming soon.", "ffffff00")
+        .. "\n\n  This tab will track raid attendance, late arrivals, and DKP."
+        .. "\n  The data model is on hold until the spec (Excel + DKP rules) is provided."
+        .. "\n\n  Planned features:"
+        .. "\n    - One-click \"Mark current raid group as Present\""
+        .. "\n    - Late-without-notice button per player"
+        .. "\n    - DKP scoring (rules pending)")
+    container:AddChild(lbl)
+end
+
 local function buildMainContents(frame)
     -- Stamp any new hiatus weeks that have rolled over since the last
     -- refresh, so the data is consistent before we render anything.
     TTSGCM:EnsureHiatusUpToCurrent()
 
     frame:ReleaseChildren()
-    frame:SetLayout("List")
+    frame:SetLayout("Fill")
 
-    if mainView == "detail" and detailContext and detailContext.player
-            and TTSGCM.TrackedPlayers:IsTracked(detailContext.player) then
-        buildDetailView(frame, detailContext)
-    elseif mainView == "history" then
-        buildHistoryView(frame)
-    elseif mainView == "weekplayers" and weekContext and weekContext.weekStart then
-        buildWeekPlayersView(frame, weekContext)
-    else
-        mainView = "list"
-        detailContext = nil
-        weekContext = nil
-        buildListView(frame)
-    end
+    local tabGroup = AceGUI:Create("TabGroup")
+    tabGroup:SetFullWidth(true)
+    tabGroup:SetFullHeight(true)
+    tabGroup:SetLayout("List")
+    tabGroup:SetTabs({
+        { text = "Consumable Contribution", value = "consumable" },
+        { text = "Assistance Tracking",     value = "assistance" },
+    })
+    tabGroup:SetCallback("OnGroupSelected", function(container, _, group)
+        mainTab = group
+        container:ReleaseChildren()
+        container:SetLayout("List")
+        if group == "consumable" then
+            buildConsumableTab(container)
+        else
+            buildAssistanceTab(container)
+        end
+    end)
+    tabGroup:SelectTab(mainTab)
+    frame:AddChild(tabGroup)
 end
 
 function UI:OpenMain()
