@@ -96,25 +96,67 @@ local function ensureWeeklyDebtBucket(weekStart)
     return b
 end
 
-local function getOrCreateRaidEventForToday()
+-- Convert a UNIX timestamp into a YYYY-MM-DD date string in PST.
+-- We hardcode -8h offset (PST, no DST) to match the WeekEngine anchor.
+-- This is essential because raid events are identified by their PST
+-- date - if we used the player's local time, an officer in Spain and
+-- an officer in California would create different event IDs for the
+-- same raid night.
+local function pstDateString(timestamp)
+    return date("!%Y-%m-%d", (timestamp or time()) - 8 * 3600)
+end
+
+local function getOrCreateRaidEventForDay(eventId, when)
     local A = getAssist()
     local W = TTSGCM.WeekEngine
-    local now = time()
-    -- Use the day-of-year as the event id within the year, plus the
-    -- year, so multiple raid days resolve to distinct ids and same-day
-    -- repeated scans hit the same event.
-    local d = date("*t", now)
-    local eventId = string.format("%04d-%02d-%02d", d.year, d.month, d.day)
     if not A.raidEvents[eventId] then
         A.raidEvents[eventId] = {
-            id        = eventId,
-            createdAt = now,
-            scannedAt = 0,
-            weekStart = W:GetWeekStart(now),
-            attendance = {},
+            id             = eventId,
+            createdAt      = when,
+            scannedAt      = 0,
+            firstScannedAt = 0,
+            weekStart      = W:GetWeekStart(when),
+            attendance     = {},
         }
     end
     return A.raidEvents[eventId]
+end
+
+local function getOrCreateRaidEventForToday()
+    local now = time()
+    return getOrCreateRaidEventForDay(pstDateString(now), now)
+end
+
+-- The 3 raid days for the given weekStart (Tuesday, Wednesday,
+-- Thursday in PST). Returns a list of { id, label, dayOffset }.
+function AssistanceTracker:GetRaidDaysForWeek(weekStart)
+    return {
+        { id = pstDateString(weekStart),                label = "Tue", dayOffset = 0 },
+        { id = pstDateString(weekStart + 86400),        label = "Wed", dayOffset = 1 },
+        { id = pstDateString(weekStart + 86400 * 2),    label = "Thu", dayOffset = 2 },
+    }
+end
+
+function AssistanceTracker:GetEventForDayId(dayId)
+    return getAssist().raidEvents[dayId]
+end
+
+-- Used by the UI when the user wants to manually set a status for a
+-- past raid day that doesn't have an event yet (e.g., editing last
+-- week from the History view).
+function AssistanceTracker:EnsureEventForDayId(dayId, weekStart)
+    local A = getAssist()
+    if not A.raidEvents[dayId] then
+        A.raidEvents[dayId] = {
+            id             = dayId,
+            createdAt      = time(),
+            scannedAt      = 0,
+            firstScannedAt = 0,
+            weekStart      = weekStart,
+            attendance     = {},
+        }
+    end
+    return A.raidEvents[dayId]
 end
 
 -- Counts how many `late_no_notice` events the player has accumulated

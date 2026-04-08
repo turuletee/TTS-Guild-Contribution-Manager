@@ -24,23 +24,35 @@ TTSGCM.UI = UI
 -- ----------------------------------------------------------------------
 --
 -- Top-level: a TabGroup with two tabs
---   "consumable"  - the bank/contribution tracker (everything below)
---   "assistance"  - placeholder for the upcoming Assistance Tracker
+--   "consumable" - the bank/contribution tracker
+--   "assistance" - the raid attendance + DKP + fines tracker
 --
--- Inside the consumable tab, the view router has these states:
---   "list"        - current week, all tracked players
---   "detail"      - one player, ANY week (detailContext.weekStart)
---   "history"     - list of past weeks (last 5 + any with debt)
---   "weekplayers" - one past week, all tracked players for that week
+-- Each tab has its own internal view router. The tab's container is
+-- rebuilt when the tab is selected (or refreshed) and the appropriate
+-- sub-view is rendered into it.
 --
--- detailContext = { player, weekStart, backTo }
--- weekContext   = { weekStart, backTo }
+-- Consumable tab views:
+--   "list"        current week, all tracked players
+--   "detail"      one player, any week (detailContext.weekStart)
+--   "history"     list of past weeks (last 5 + any with debt)
+--   "weekplayers" one past week, all tracked players for that week
+--
+-- Assistance tab views:
+--   "weekgrid"      Tue/Wed/Thu attendance grid for some week
+--   "playerdetail"  one player + week: edit per-day status, DKP, fines
+--   "dkpstandings"  DKP roster with /raid-post buttons
+--   "history"       list of past weeks for the assistance side
 
 local mainFrame = nil
 local mainTab = "consumable"
-local mainView = "list"
+
+local mainView = "list"        -- consumable router
 local detailContext = nil
 local weekContext = nil
+
+local assistView = "weekgrid"  -- assistance router
+local assistWeekContext = nil  -- { weekStart } - the week the grid is showing
+local assistDetailContext = nil -- { player, weekStart, backTo }
 
 local function closeMain()
     if mainFrame then
@@ -50,6 +62,9 @@ local function closeMain()
         mainView = "list"
         detailContext = nil
         weekContext = nil
+        assistView = "weekgrid"
+        assistWeekContext = nil
+        assistDetailContext = nil
     end
 end
 
@@ -789,26 +804,601 @@ end
 -- Assistance Tracker tab. The data model and slash commands are wired
 -- in 0.6.1 but the rich UI lands in 0.6.2. For now this tab points the
 -- user at the chat commands so they can test the foundation.
-local function buildAssistanceTab(container)
+-- ----------------------------------------------------------------------
+-- ASSISTANCE TAB
+-- ----------------------------------------------------------------------
+
+-- Short status pills used in the compact week grid. Each is at most a
+-- few characters so 3 of them fit on one row alongside the name.
+local ASSIST_PILL = {
+    ok                = "K",
+    late_no_notice    = "T",
+    late_w_notice     = "O",
+    absent_w_notice   = "A",
+    absent_no_notice  = "AS",
+    vacation          = "V",
+    cancelled         = "C",
+}
+
+-- Returns the colored short pill for a status (or "-" / gray for nil)
+local function assistPill(status)
+    if not status then return colored("-", "ff666666") end
+    local AT = TTSGCM.AssistanceTracker
+    local color = AT.STATUS_COLORS[status] or "ffaaaaaa"
+    return colored(ASSIST_PILL[status] or "?", color)
+end
+
+local function buildAssistHeader(parent, weekStart)
+    local W = TTSGCM.WeekEngine
+    local TP = TTSGCM.TrackedPlayers
+    local AT = TTSGCM.AssistanceTracker
+    local currentWeek = W:GetCurrentWeekStart()
+    local isCurrent = (weekStart == currentWeek)
+
+    local header = AceGUI:Create("SimpleGroup")
+    header:SetFullWidth(true)
+    header:SetLayout("Flow")
+
+    local label = AceGUI:Create("Label")
+    if TTSGCM.db.profile.firstWeekStart then
+        local idx = W:GetWeekIndex(weekStart, TTSGCM.db.profile.firstWeekStart)
+        label:SetText(colored("Week " .. idx, "ffffff00") .. "  " .. W:FormatWeek(weekStart)
+            .. (isCurrent and "" or "  " .. colored("(past)", "ffaaaaaa")))
+    else
+        label:SetText(colored(W:FormatWeek(weekStart), "ffffff00")
+            .. (isCurrent and "" or "  " .. colored("(past)", "ffaaaaaa")))
+    end
+    label:SetWidth(420)
+    header:AddChild(label)
+
+    local A = TTSGCM.db.profile.assistance
+    local tierLabel = (A.tierLabel and A.tierLabel ~= "") and (" - " .. A.tierLabel) or ""
+    local tierLbl = AceGUI:Create("Label")
+    tierLbl:SetText(colored("Tier" .. tierLabel, "ff66ccff"))
+    tierLbl:SetWidth(220)
+    header:AddChild(tierLbl)
+
+    parent:AddChild(header)
+end
+
+-- One row in the week grid. Compact - all 3 day cells, name, DKP,
+-- this-week fines, an Edit button.
+local function buildAssistRow(parent, name, weekStart, raidDays)
+    local AT = TTSGCM.AssistanceTracker
+    local D = TTSGCM.DebtEngine
+
+    local row = AceGUI:Create("SimpleGroup")
+    row:SetFullWidth(true)
+    row:SetLayout("Flow")
+
+    -- Name
+    local nameLbl = AceGUI:Create("Label")
+    nameLbl:SetText(colored(name, "ffffffff"))
+    nameLbl:SetWidth(180)
+    row:AddChild(nameLbl)
+
+    -- 3 day pills
+    for _, day in ipairs(raidDays) do
+        local cell = AceGUI:Create("Label")
+        local event = AT:GetEventForDayId(day.id)
+        local status = event and event.attendance and event.attendance[name]
+        cell:SetText(day.label .. " " .. assistPill(status))
+        cell:SetWidth(72)
+        row:AddChild(cell)
+    end
+
+    -- DKP
+    local dkpLbl = AceGUI:Create("Label")
+    local dkp = AT:GetDKP(name)
+    local dkpColor = (dkp < 0) and "ffff5555" or "ff33ff99"
+    dkpLbl:SetText(colored(string.format("DKP %d", dkp), dkpColor))
+    dkpLbl:SetWidth(90)
+    row:AddChild(dkpLbl)
+
+    -- Fines this week
+    local fineLbl = AceGUI:Create("Label")
+    local owed = AT:GetWeeklyFineTotal(name, weekStart)
+    local paid = AT:GetWeeklyPaid(name, weekStart)
+    local rem = math.max(0, owed - paid)
+    if owed == 0 then
+        fineLbl:SetText(colored("no fines", "ff666666"))
+    elseif rem == 0 then
+        fineLbl:SetText(colored(D:FormatCopper(owed) .. " (paid)", "ff33ff99"))
+    else
+        fineLbl:SetText(colored(D:FormatCopper(rem) .. " left", "ffff5555"))
+    end
+    fineLbl:SetWidth(170)
+    row:AddChild(fineLbl)
+
+    -- Edit button
+    local editBtn = AceGUI:Create("Button")
+    editBtn:SetText("Edit")
+    editBtn:SetWidth(70)
+    editBtn:SetCallback("OnClick", function()
+        UI:OpenAssistDetail(name, weekStart)
+    end)
+    row:AddChild(editBtn)
+
+    parent:AddChild(row)
+end
+
+local function buildAssistWeekGrid(container)
+    local W = TTSGCM.WeekEngine
+    local TP = TTSGCM.TrackedPlayers
+    local AT = TTSGCM.AssistanceTracker
+    local weekStart = (assistWeekContext and assistWeekContext.weekStart) or W:GetCurrentWeekStart()
+    local raidDays = AT:GetRaidDaysForWeek(weekStart)
+
     container:SetLayout("List")
+
+    buildAssistHeader(container, weekStart)
+
+    -- Action bar
+    local actions = AceGUI:Create("SimpleGroup")
+    actions:SetFullWidth(true)
+    actions:SetLayout("Flow")
+
+    local markBtn = AceGUI:Create("Button")
+    markBtn:SetText("Mark Raid Group")
+    markBtn:SetWidth(160)
+    markBtn:SetCallback("OnClick", function()
+        local event, present, absent, latePromoted = AT:MarkRaidGroup()
+        if latePromoted > 0 then
+            TTSGCM:Print(string.format("|cff33ff99rescan %s:|r %d present (%d late arrivals), %d still absent",
+                event.id, present, latePromoted, absent))
+        else
+            TTSGCM:Print(string.format("|cff33ff99raid %s scanned:|r %d present, %d absent",
+                event.id, present, absent))
+        end
+        UI:RefreshMain()
+    end)
+    actions:AddChild(markBtn)
+
+    local pastBtn = AceGUI:Create("Button")
+    pastBtn:SetText("Past Weeks")
+    pastBtn:SetWidth(120)
+    pastBtn:SetCallback("OnClick", function() UI:ShowAssistHistory() end)
+    actions:AddChild(pastBtn)
+
+    local dkpBtn = AceGUI:Create("Button")
+    dkpBtn:SetText("DKP Standings")
+    dkpBtn:SetWidth(140)
+    dkpBtn:SetCallback("OnClick", function() UI:ShowAssistDkp() end)
+    actions:AddChild(dkpBtn)
+
+    local resetBtn = AceGUI:Create("Button")
+    resetBtn:SetText("Reset Tier")
+    resetBtn:SetWidth(110)
+    resetBtn:SetCallback("OnClick", function()
+        StaticPopupDialogs["TTSGCM_RESET_TIER"] = {
+            text = "Reset all DKP and attendance for a new tier?\nThis cannot be undone.",
+            button1 = "Reset", button2 = "Cancel",
+            OnAccept = function()
+                AT:ResetTier()
+                TTSGCM:Print("|cffff5555tier reset.|r")
+                UI:RefreshMain()
+            end,
+            timeout = 0, whileDead = true, hideOnEscape = true,
+        }
+        StaticPopup_Show("TTSGCM_RESET_TIER")
+    end)
+    actions:AddChild(resetBtn)
+
+    local refreshBtn = AceGUI:Create("Button")
+    refreshBtn:SetText("Refresh")
+    refreshBtn:SetWidth(90)
+    refreshBtn:SetCallback("OnClick", function() UI:RefreshMain() end)
+    actions:AddChild(refreshBtn)
+
+    container:AddChild(actions)
+
+    -- Column headers for the player grid
+    local headerRow = AceGUI:Create("SimpleGroup")
+    headerRow:SetFullWidth(true)
+    headerRow:SetLayout("Flow")
+    local function makeHdr(text, w)
+        local l = AceGUI:Create("Label")
+        l:SetText(colored(text, "ffaaaaaa"))
+        l:SetWidth(w)
+        headerRow:AddChild(l)
+    end
+    makeHdr("Player", 180)
+    for _, day in ipairs(raidDays) do makeHdr(day.label .. " " .. day.id:sub(6), 72) end
+    makeHdr("DKP", 90)
+    makeHdr("Fines", 170)
+    makeHdr("", 70)
+    container:AddChild(headerRow)
+
+    -- Scroll for the rows
+    local scroll = AceGUI:Create("ScrollFrame")
+    scroll:SetFullWidth(true)
+    scroll:SetLayout("List")
+    scroll:SetHeight(380)
+    container:AddChild(scroll)
+
+    local list = TP:List()
+    if #list == 0 then
+        local empty = AceGUI:Create("Label")
+        empty:SetText("\n  No tracked players. Add some from the Consumable Contribution tab.")
+        empty:SetFullWidth(true)
+        scroll:AddChild(empty)
+        return
+    end
+
+    -- Sort: players with unpaid fines first (highest first), then by
+    -- DKP ascending (most penalized first), then alphabetical
+    table.sort(list, function(a, b)
+        local fa = math.max(0, AT:GetWeeklyFineTotal(a, weekStart) - AT:GetWeeklyPaid(a, weekStart))
+        local fb = math.max(0, AT:GetWeeklyFineTotal(b, weekStart) - AT:GetWeeklyPaid(b, weekStart))
+        if fa ~= fb then return fa > fb end
+        local da = AT:GetDKP(a)
+        local db = AT:GetDKP(b)
+        if da ~= db then return da < db end
+        return a < b
+    end)
+
+    for _, name in ipairs(list) do
+        buildAssistRow(scroll, name, weekStart, raidDays)
+    end
+end
+
+-- ----------------------------------------------------------------------
+-- ASSISTANCE PLAYER DETAIL VIEW
+-- ----------------------------------------------------------------------
+
+local function buildAssistPlayerDetail(container, ctx)
+    local W = TTSGCM.WeekEngine
+    local D = TTSGCM.DebtEngine
+    local AT = TTSGCM.AssistanceTracker
+    local name = ctx.player
+    local weekStart = ctx.weekStart or W:GetCurrentWeekStart()
+    local raidDays = AT:GetRaidDaysForWeek(weekStart)
+    local currentWeek = W:GetCurrentWeekStart()
+    local isCurrent = (weekStart == currentWeek)
+
+    container:SetLayout("List")
+
+    -- Top bar
+    local top = AceGUI:Create("SimpleGroup")
+    top:SetFullWidth(true)
+    top:SetLayout("Flow")
+
+    local backBtn = AceGUI:Create("Button")
+    backBtn:SetText("< Back")
+    backBtn:SetWidth(90)
+    backBtn:SetCallback("OnClick", function() UI:ShowAssistGrid(weekStart) end)
+    top:AddChild(backBtn)
+
+    local labelTxt = W:FormatWeek(weekStart) .. (isCurrent and "" or " (past)")
+    local weekLbl = AceGUI:Create("Label")
+    weekLbl:SetText("  " .. colored(labelTxt, "ffaaaaaa"))
+    weekLbl:SetWidth(420)
+    top:AddChild(weekLbl)
+    container:AddChild(top)
+
+    -- Heading
     local heading = AceGUI:Create("Heading")
-    heading:SetText("Assistance Tracking")
     heading:SetFullWidth(true)
+    heading:SetText(name .. "  -  DKP " .. AT:GetDKP(name))
     container:AddChild(heading)
 
-    local lbl = AceGUI:Create("Label")
-    lbl:SetFullWidth(true)
-    lbl:SetText("\n  " .. colored("Foundation ready - UI coming next.", "ffffff00")
-        .. "\n\n  Data model, status codes, and DKP / fine math are wired in 0.6.1."
-        .. "\n  The dedicated UI grid lands in 0.6.2."
-        .. "\n\n  Test from chat:"
-        .. "\n    " .. colored("/gcm raid mark", "ff66ccff") .. "             scan current raid group for today"
-        .. "\n    " .. colored("/gcm raid show", "ff66ccff") .. "             print today's attendance + DKP"
-        .. "\n    " .. colored("/gcm raid set <player> <status>", "ff66ccff") .. "  manual override"
-        .. "\n    " .. colored("/gcm raid dkp <player> <delta>", "ff66ccff") .. "   adjust DKP (e.g. +5 or -10)"
-        .. "\n    " .. colored("/gcm raid resettier [label]", "ff66ccff") .. "    start a fresh tier"
-        .. "\n\n  Status codes for the set command: ok, late_no, late_w, abs_w, abs_no, vac, cancel")
-    container:AddChild(lbl)
+    -- Per-day status dropdowns
+    local dayGroup = AceGUI:Create("InlineGroup")
+    dayGroup:SetTitle("Per-day status")
+    dayGroup:SetFullWidth(true)
+    dayGroup:SetLayout("Flow")
+
+    local statusList = {
+        ok = "OK",
+        late_w_notice = "Late (notified)",
+        late_no_notice = "LATE (no notice)",
+        absent_w_notice = "Absent (notified)",
+        absent_no_notice = "ABSENT (no notice)",
+        vacation = "Vacation",
+        cancelled = "Cancelled",
+    }
+    local statusOrder = { "ok", "late_w_notice", "late_no_notice", "absent_w_notice", "absent_no_notice", "vacation", "cancelled" }
+
+    for _, day in ipairs(raidDays) do
+        local dayLbl = AceGUI:Create("Label")
+        dayLbl:SetText(colored(day.label .. " " .. day.id, "ffffff00"))
+        dayLbl:SetWidth(150)
+        dayGroup:AddChild(dayLbl)
+
+        local dropdown = AceGUI:Create("Dropdown")
+        dropdown:SetWidth(220)
+        dropdown:SetList(statusList, statusOrder)
+        local event = AT:GetEventForDayId(day.id)
+        local current = event and event.attendance and event.attendance[name]
+        if current then dropdown:SetValue(current) end
+        dropdown:SetCallback("OnValueChanged", function(_, _, value)
+            -- Make sure the event exists for this day; create with the
+            -- correct weekStart so the math hits the right bucket.
+            AT:EnsureEventForDayId(day.id, weekStart)
+            AT:SetStatus(day.id, name, value)
+            UI:RefreshMain()
+        end)
+        dayGroup:AddChild(dropdown)
+    end
+    container:AddChild(dayGroup)
+
+    -- DKP adjust block
+    local dkpGroup = AceGUI:Create("InlineGroup")
+    dkpGroup:SetTitle("DKP adjustments")
+    dkpGroup:SetFullWidth(true)
+    dkpGroup:SetLayout("Flow")
+
+    local dkpLbl = AceGUI:Create("Label")
+    dkpLbl:SetText("Current DKP: " .. colored(tostring(AT:GetDKP(name)),
+        AT:GetDKP(name) < 0 and "ffff5555" or "ff33ff99"))
+    dkpLbl:SetWidth(180)
+    dkpGroup:AddChild(dkpLbl)
+
+    local function adjustBtn(label, delta)
+        local b = AceGUI:Create("Button")
+        b:SetText(label)
+        b:SetWidth(70)
+        b:SetCallback("OnClick", function()
+            AT:AdjustDKP(name, delta, "manual via UI", "manual")
+            UI:RefreshMain()
+        end)
+        return b
+    end
+    dkpGroup:AddChild(adjustBtn("+5", 5))
+    dkpGroup:AddChild(adjustBtn("-5", -5))
+    dkpGroup:AddChild(adjustBtn("+10", 10))
+    dkpGroup:AddChild(adjustBtn("-10", -10))
+    container:AddChild(dkpGroup)
+
+    -- Fines block
+    local fineGroup = AceGUI:Create("InlineGroup")
+    fineGroup:SetTitle("Fines this week")
+    fineGroup:SetFullWidth(true)
+    fineGroup:SetLayout("Flow")
+
+    local owed = AT:GetWeeklyFineTotal(name, weekStart)
+    local paid = AT:GetWeeklyPaid(name, weekStart)
+    local rem = math.max(0, owed - paid)
+
+    local breakdown = AceGUI:Create("Label")
+    breakdown:SetFullWidth(true)
+    breakdown:SetText(string.format("Owed: %s   Paid: %s   Remaining: %s",
+        D:FormatCopper(owed), D:FormatCopper(paid), D:FormatCopper(rem)))
+    fineGroup:AddChild(breakdown)
+
+    local enchantLbl = AceGUI:Create("Label")
+    enchantLbl:SetText(colored("Missing enchants this week (0-42):", "ffffff00"))
+    enchantLbl:SetWidth(260)
+    fineGroup:AddChild(enchantLbl)
+
+    local enchantBox = AceGUI:Create("EditBox")
+    enchantBox:SetWidth(80)
+    enchantBox:SetText(tostring(AT:GetEnchantMissingCount(name, weekStart)))
+    enchantBox:SetCallback("OnEnterPressed", function(_, _, value)
+        local n = tonumber(value) or 0
+        if n < 0 then n = 0 end
+        if n > 42 then n = 42 end
+        AT:SetEnchantMissingCount(name, weekStart, n)
+        UI:RefreshMain()
+    end)
+    fineGroup:AddChild(enchantBox)
+
+    local payBox = AceGUI:Create("EditBox")
+    payBox:SetLabel("Mark paid (gold) - blank = remaining")
+    payBox:SetWidth(280)
+    fineGroup:AddChild(payBox)
+
+    local payBtn = AceGUI:Create("Button")
+    payBtn:SetText("Mark Paid")
+    payBtn:SetWidth(110)
+    payBtn:SetCallback("OnClick", function()
+        local g = tonumber(payBox:GetText())
+        local copper = (g and g > 0) and D:GoldToCopper(g) or rem
+        if copper <= 0 then
+            TTSGCM:Print("nothing to mark (already paid or amount zero)")
+            return
+        end
+        AT:MarkPaid(name, weekStart, copper)
+        UI:RefreshMain()
+    end)
+    fineGroup:AddChild(payBtn)
+
+    local clearBtn = AceGUI:Create("Button")
+    clearBtn:SetText("Clear Paid")
+    clearBtn:SetWidth(110)
+    clearBtn:SetCallback("OnClick", function()
+        AT:ClearPaid(name, weekStart)
+        UI:RefreshMain()
+    end)
+    fineGroup:AddChild(clearBtn)
+
+    container:AddChild(fineGroup)
+end
+
+-- ----------------------------------------------------------------------
+-- ASSISTANCE DKP STANDINGS VIEW
+-- ----------------------------------------------------------------------
+
+local function buildAssistDkpStandings(container)
+    local TP = TTSGCM.TrackedPlayers
+    local AT = TTSGCM.AssistanceTracker
+
+    container:SetLayout("List")
+
+    local top = AceGUI:Create("SimpleGroup")
+    top:SetFullWidth(true)
+    top:SetLayout("Flow")
+
+    local backBtn = AceGUI:Create("Button")
+    backBtn:SetText("< Back")
+    backBtn:SetWidth(90)
+    backBtn:SetCallback("OnClick", function() UI:ShowAssistGrid() end)
+    top:AddChild(backBtn)
+
+    local title = AceGUI:Create("Label")
+    title:SetText("  " .. colored("DKP Standings", "ffffff00"))
+    title:SetWidth(280)
+    top:AddChild(title)
+
+    local postRaidBtn = AceGUI:Create("Button")
+    postRaidBtn:SetText("Post all to /raid")
+    postRaidBtn:SetWidth(160)
+    postRaidBtn:SetCallback("OnClick", function()
+        TTSGCM:CmdDKPAnnounce("all")
+    end)
+    top:AddChild(postRaidBtn)
+
+    container:AddChild(top)
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetFullWidth(true)
+    heading:SetText("All tracked players (sorted by DKP, lowest first)")
+    container:AddChild(heading)
+
+    local scroll = AceGUI:Create("ScrollFrame")
+    scroll:SetFullWidth(true)
+    scroll:SetLayout("List")
+    scroll:SetHeight(440)
+    container:AddChild(scroll)
+
+    local list = TP:List()
+    table.sort(list, function(a, b)
+        local da = AT:GetDKP(a)
+        local db = AT:GetDKP(b)
+        if da ~= db then return da < db end
+        return a < b
+    end)
+
+    for _, name in ipairs(list) do
+        local row = AceGUI:Create("SimpleGroup")
+        row:SetFullWidth(true)
+        row:SetLayout("Flow")
+
+        local nameLbl = AceGUI:Create("Label")
+        nameLbl:SetText(name)
+        nameLbl:SetWidth(220)
+        row:AddChild(nameLbl)
+
+        local dkp = AT:GetDKP(name)
+        local color = (dkp < 0) and "ffff5555" or "ff33ff99"
+        local dkpLbl = AceGUI:Create("Label")
+        dkpLbl:SetText(colored(string.format("DKP %d", dkp), color))
+        dkpLbl:SetWidth(120)
+        row:AddChild(dkpLbl)
+
+        -- Per-player whisper post button
+        local whisperBtn = AceGUI:Create("Button")
+        whisperBtn:SetText("Post to /raid")
+        whisperBtn:SetWidth(140)
+        whisperBtn:SetCallback("OnClick", function()
+            TTSGCM:CmdDKPAnnounce(name)
+        end)
+        row:AddChild(whisperBtn)
+
+        scroll:AddChild(row)
+    end
+end
+
+-- ----------------------------------------------------------------------
+-- ASSISTANCE HISTORY VIEW (browse past weeks)
+-- ----------------------------------------------------------------------
+
+local function buildAssistHistory(container)
+    local W = TTSGCM.WeekEngine
+    local TP = TTSGCM.TrackedPlayers
+    local AT = TTSGCM.AssistanceTracker
+    local currentWeek = W:GetCurrentWeekStart()
+
+    container:SetLayout("List")
+
+    local top = AceGUI:Create("SimpleGroup")
+    top:SetFullWidth(true)
+    top:SetLayout("Flow")
+
+    local backBtn = AceGUI:Create("Button")
+    backBtn:SetText("< Back")
+    backBtn:SetWidth(90)
+    backBtn:SetCallback("OnClick", function() UI:ShowAssistGrid() end)
+    top:AddChild(backBtn)
+
+    local title = AceGUI:Create("Label")
+    title:SetText("  " .. colored("Past weeks (assistance)", "ffffff00")
+        .. "  |cff999999(this tier)|r")
+    title:SetWidth(560)
+    top:AddChild(title)
+    container:AddChild(top)
+
+    -- List up to 12 weeks back from the current week (or fewer if
+    -- the tier started more recently). Each row opens that week's grid.
+    local A = TTSGCM.db.profile.assistance
+    local tierStart = A.tierStartedAt or 0
+    local maxBack = 12
+    local scroll = AceGUI:Create("ScrollFrame")
+    scroll:SetFullWidth(true)
+    scroll:SetLayout("List")
+    scroll:SetHeight(460)
+    container:AddChild(scroll)
+
+    for i = 0, maxBack do
+        local ws = W:AddWeeks(currentWeek, -i)
+        if tierStart > 0 and ws < W:GetWeekStart(tierStart) then break end
+
+        local row = AceGUI:Create("InlineGroup")
+        row:SetFullWidth(true)
+        row:SetLayout("Flow")
+        local idx = TTSGCM.db.profile.firstWeekStart
+            and W:GetWeekIndex(ws, TTSGCM.db.profile.firstWeekStart) or nil
+        local label = (i == 0) and " (current)" or string.format(" (-%d)", i)
+        local title = idx and ("Week " .. idx .. " - " .. W:FormatWeek(ws) .. label)
+            or (W:FormatWeek(ws) .. label)
+        row:SetTitle(title)
+
+        -- Quick summary: total fines this week, count of players w/ events
+        local totalFine = 0
+        local playersWithEvents = 0
+        for _, name in ipairs(TP:List()) do
+            totalFine = totalFine + AT:GetWeeklyFineTotal(name, ws)
+        end
+        local raidDays = AT:GetRaidDaysForWeek(ws)
+        for _, day in ipairs(raidDays) do
+            if AT:GetEventForDayId(day.id) then
+                playersWithEvents = playersWithEvents + 1
+            end
+        end
+        local sum = AceGUI:Create("Label")
+        sum:SetText(string.format("  %d raid event(s) tracked, total fines: %s",
+            playersWithEvents, TTSGCM.DebtEngine:FormatCopper(totalFine)))
+        sum:SetWidth(380)
+        row:AddChild(sum)
+
+        local openBtn = AceGUI:Create("Button")
+        openBtn:SetText("Open")
+        openBtn:SetWidth(80)
+        openBtn:SetCallback("OnClick", function() UI:ShowAssistGrid(ws) end)
+        row:AddChild(openBtn)
+
+        scroll:AddChild(row)
+    end
+end
+
+-- ----------------------------------------------------------------------
+-- ASSISTANCE TAB ROUTER
+-- ----------------------------------------------------------------------
+
+local function buildAssistanceTab(container)
+    container:ReleaseChildren()
+    container:SetLayout("List")
+    if assistView == "playerdetail" and assistDetailContext
+            and TTSGCM.TrackedPlayers:IsTracked(assistDetailContext.player) then
+        buildAssistPlayerDetail(container, assistDetailContext)
+    elseif assistView == "dkpstandings" then
+        buildAssistDkpStandings(container)
+    elseif assistView == "history" then
+        buildAssistHistory(container)
+    else
+        assistView = "weekgrid"
+        buildAssistWeekGrid(container)
+    end
 end
 
 local function buildMainContents(frame)
@@ -912,6 +1502,42 @@ end
 function UI:ShowHistory()
     mainView = "history"
     detailContext = nil
+    if mainFrame then self:RefreshMain() else self:OpenMain() end
+end
+
+-- ----------------------------------------------------------------------
+-- Assistance tab navigation
+-- ----------------------------------------------------------------------
+
+function UI:ShowAssistGrid(weekStart)
+    mainTab = "assistance"
+    assistView = "weekgrid"
+    assistWeekContext = weekStart and { weekStart = weekStart } or nil
+    assistDetailContext = nil
+    if mainFrame then self:RefreshMain() else self:OpenMain() end
+end
+
+function UI:OpenAssistDetail(name, weekStart)
+    if not name then return end
+    mainTab = "assistance"
+    assistView = "playerdetail"
+    assistDetailContext = {
+        player = name,
+        weekStart = weekStart or TTSGCM.WeekEngine:GetCurrentWeekStart(),
+        backTo = "weekgrid",
+    }
+    if not mainFrame then self:OpenMain() else self:RefreshMain() end
+end
+
+function UI:ShowAssistDkp()
+    mainTab = "assistance"
+    assistView = "dkpstandings"
+    if mainFrame then self:RefreshMain() else self:OpenMain() end
+end
+
+function UI:ShowAssistHistory()
+    mainTab = "assistance"
+    assistView = "history"
     if mainFrame then self:RefreshMain() else self:OpenMain() end
 end
 
