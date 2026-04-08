@@ -1,0 +1,9 @@
+## Interface: 110200
+## Title: Weekly Contribution Manager
+## Notes: Track guild bank contributions per week for officers
+## Author: Nachorizo
+## Version: 0.0.1
+## SavedVariables: WeeklyContributionManagerDB
+## IconTexture: Interface\Icons\INV_Misc_Coin_01
+
+Core.lua
