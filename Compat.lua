@@ -89,6 +89,31 @@ function Compat:GetGuildBankMoneyTransaction(i)
 end
 
 -- ----------------------------------------------------------------------
+-- Player interaction (replaces removed GUILDBANKFRAME_OPENED event)
+--
+-- In Dragonflight (10.0) Blizzard removed GUILDBANKFRAME_OPENED and
+-- consolidated all "frame opened" events into a single
+-- PLAYER_INTERACTION_MANAGER_FRAME_SHOW event whose first arg is the
+-- interaction type. The numeric value for guild banker is 10.
+-- ----------------------------------------------------------------------
+
+function Compat:GuildBankerInteractionType()
+    if Enum and Enum.PlayerInteractionType and Enum.PlayerInteractionType.GuildBanker then
+        return Enum.PlayerInteractionType.GuildBanker
+    end
+    return 10  -- known value as of patch 10.0+
+end
+
+-- True if the player is currently interacting with a guild bank NPC.
+-- Some addons use this to gate operations that need bank proximity.
+function Compat:IsAtGuildBank()
+    if C_PlayerInteractionManager and C_PlayerInteractionManager.IsInteractingWithNpcOfType then
+        return C_PlayerInteractionManager.IsInteractingWithNpcOfType(self:GuildBankerInteractionType()) == true
+    end
+    return false
+end
+
+-- ----------------------------------------------------------------------
 -- Misc
 -- ----------------------------------------------------------------------
 

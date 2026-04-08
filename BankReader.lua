@@ -73,8 +73,17 @@ end
 
 function BankReader:RequestLog()
     local C = TTSGCM.Compat
-    if not C:IsInGuild() then return end
-    C:QueryGuildBankLog()
+    if not C:IsInGuild() then
+        TTSGCM:Print("|cffff5555cannot scan: not in a guild|r")
+        return
+    end
+    local atBank = C:IsAtGuildBank()
+    local ok = C:QueryGuildBankLog()
+    TTSGCM:Print(string.format("|cff66ccffQueryGuildBankLog called (sent=%s, atBank=%s)|r",
+        tostring(ok), tostring(atBank)))
+    if not atBank then
+        TTSGCM:Print("|cffaaaaaa(scanning works best when the guild bank UI is open. Walk to the bank NPC.)|r")
+    end
 end
 
 -- Parse the currently-loaded money log and update db.profile.weeklyHistory.
@@ -83,14 +92,18 @@ end
 function BankReader:ProcessLog()
     local C = TTSGCM.Compat
     local n = C:GetNumGuildBankMoneyTransactions()
+    TTSGCM:Print(string.format("|cff66ccffProcessLog: %d transaction(s) in money log|r", n))
     if n == 0 then return 0 end
 
     local now = C:Now()
     local W = TTSGCM.WeekEngine
     local txs = {}
+    local typeCounts = {}  -- diagnostic: count of each tx type seen
 
     for i = 1, n do
         local txType, name, amount, years, months, days, hours = C:GetGuildBankMoneyTransaction(i)
+        local typeKey = tostring(txType)
+        typeCounts[typeKey] = (typeCounts[typeKey] or 0) + 1
         if txType == "deposit" and type(name) == "string" and type(amount) == "number" and amount > 0 then
             local txTime = now - elapsedToSeconds(years, months, days, hours)
             table.insert(txs, {
@@ -101,6 +114,15 @@ function BankReader:ProcessLog()
             })
         end
     end
+
+    -- Print the type histogram so we can spot if "deposit" was renamed
+    local typeReport = {}
+    for k, v in pairs(typeCounts) do
+        table.insert(typeReport, string.format("%s=%d", k, v))
+    end
+    table.sort(typeReport)
+    TTSGCM:Print("|cff66ccffmoney log types: " .. table.concat(typeReport, ", ") .. "|r")
+    TTSGCM:Print(string.format("|cff66ccffparsed %d deposit(s)|r", #txs))
 
     if #txs == 0 then return 0 end
 
@@ -126,6 +148,7 @@ function BankReader:ProcessLog()
             updated = updated + 1
         end
     end
+    TTSGCM:Print(string.format("|cff33ff99wrote %d week(s) of contributions|r", updated))
     return updated
 end
 

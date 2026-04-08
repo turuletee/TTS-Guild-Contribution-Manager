@@ -63,7 +63,10 @@ end
 
 function TTSGCM:OnEnable()
     self:RegisterEvent("GUILD_ROSTER_UPDATE")
-    self:RegisterEvent("GUILDBANKFRAME_OPENED")
+    -- GUILDBANKFRAME_OPENED was removed in patch 10.0 (Dragonflight,
+    -- 2022) and never restored. Use the new unified interaction event
+    -- and filter on Enum.PlayerInteractionType.GuildBanker.
+    self:RegisterEvent("PLAYER_INTERACTION_MANAGER_FRAME_SHOW")
     self:RegisterEvent("GUILDBANKLOG_UPDATE")
     self.TrackedPlayers:RequestRosterUpdate()
     self.MinimapButton:Initialize()
@@ -81,11 +84,15 @@ function TTSGCM:GUILD_ROSTER_UPDATE()
     self.TrackedPlayers:InvalidateRosterCache()
 end
 
-function TTSGCM:GUILDBANKFRAME_OPENED()
-    self.BankReader:OnGuildBankOpened()
+function TTSGCM:PLAYER_INTERACTION_MANAGER_FRAME_SHOW(_, interactionType)
+    if interactionType == self.Compat:GuildBankerInteractionType() then
+        self:Print("|cff66ccffguild bank opened, requesting money log...|r")
+        self.BankReader:OnGuildBankOpened()
+    end
 end
 
 function TTSGCM:GUILDBANKLOG_UPDATE()
+    self:Print("|cff66ccffguild bank log update received|r")
     self.BankReader:OnGuildBankLogUpdate()
     if self.UI then self.UI:RefreshMain() end
 end
