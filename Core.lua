@@ -48,6 +48,7 @@ end
 
 function TTSBT:GUILDBANKLOG_UPDATE()
     self.BankReader:OnGuildBankLogUpdate()
+    if self.UI then self.UI:RefreshMain() end
 end
 
 -- ----------------------------------------------------------------------
@@ -65,12 +66,14 @@ local HELP_TEXT = table.concat({
     "  |cffffff00unpaid|r / |cffffff00owed [player]|r",
     "  |cffffff00setfirstweek <0-5>|r - pick week 1 (0=current Tue, max 5 weeks back)",
     "  |cffffff00prune|r - delete eligible old weeks now",
+    "  |cffffff00show|r - open the main window",
 }, "\n")
 
 function TTSBT:HandleSlashCommand(input)
     input = (input or ""):trim()
     if input == "" then
-        self:Print(HELP_TEXT)
+        -- Bare /ttsbt opens the main window
+        self.UI:ToggleMain()
         return
     end
     local cmd, rest = input:match("^(%S+)%s*(.-)$")
@@ -109,6 +112,10 @@ function TTSBT:HandleSlashCommand(input)
         self:CmdSetFirstWeek(rest)
     elseif cmd == "prune" then
         self:CmdPrune()
+    elseif cmd == "show" then
+        self.UI:OpenMain()
+    elseif cmd == "help" then
+        self:Print(HELP_TEXT)
     else
         self:Print("unknown command: " .. cmd)
         self:Print(HELP_TEXT)
