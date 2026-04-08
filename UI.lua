@@ -1509,15 +1509,15 @@ local function buildAssistanceTab(container)
 end
 
 -- ----------------------------------------------------------------------
--- SETTINGS TAB (import / export of assistance data)
+-- SETTINGS TAB
 -- ----------------------------------------------------------------------
 --
--- WoW addons cannot make HTTP requests (Blizzard sandbox), so the only
--- realistic way to share addon state across officers / install machines
--- is via copy-paste. Export serialises db.profile.assistance to a
--- string the user can copy out; Import takes a pasted string and
--- merges it back in. Both use AceSerializer-3.0 which is loaded as part
--- of the embedded Ace3 stack.
+-- Currently just an info card explaining where the addon stores its
+-- data. The earlier paste-based import/export was removed at the
+-- user's request - they're happy with local SavedVariables only.
+-- This tab is kept (rather than removed entirely) so future settings
+-- like configurable fine values, color preferences, or per-officer
+-- prefs have a place to land.
 local function buildSettingsTab(container)
     container:SetLayout("List")
 
@@ -1526,118 +1526,40 @@ local function buildSettingsTab(container)
     heading:SetFullWidth(true)
     container:AddChild(heading)
 
-    local intro = AceGUI:Create("Label")
-    intro:SetFullWidth(true)
-    intro:SetText("\n  Import / export the Assistance Tracker data so officers can share state."
-        .. "\n  WoW addons can't talk to the internet, so this is paste-based:"
-        .. "\n  one officer Exports, sends the text via Discord/email, the next officer Imports."
-        .. "\n  Only assistance data is shared - the consumable contribution debt stays local.")
-    container:AddChild(intro)
+    local storageGroup = AceGUI:Create("InlineGroup")
+    storageGroup:SetTitle("Where your data is stored")
+    storageGroup:SetFullWidth(true)
+    storageGroup:SetLayout("List")
 
-    -- Export section
-    local exportGroup = AceGUI:Create("InlineGroup")
-    exportGroup:SetTitle("Export")
-    exportGroup:SetFullWidth(true)
-    exportGroup:SetLayout("List")
+    local lbl = AceGUI:Create("Label")
+    lbl:SetFullWidth(true)
+    lbl:SetText("\n  All addon data is saved locally by WoW in the SavedVariables file:"
+        .. "\n  " .. colored("WTF/Account/<account>/SavedVariables/TTSGuildContributionManager.lua", "ffffff00")
+        .. "\n\n  This file is updated when you log out or reload the UI. It contains:"
+        .. "\n    - Tracked players list"
+        .. "\n    - Per-week consumable contribution data (deposits + manual marks)"
+        .. "\n    - Assistance Tracker (raid events, DKP balances, fines, audit log)"
+        .. "\n    - Hiatus state, first-week setting, install timestamp"
+        .. "\n\n  " .. colored("To back it up:", "ffaaaaaa") .. " copy that single file. To restore on a"
+        .. "\n  different machine, drop it in the same SavedVariables folder before launching WoW.")
+    storageGroup:AddChild(lbl)
+    container:AddChild(storageGroup)
 
-    local exportBox = AceGUI:Create("MultiLineEditBox")
-    exportBox:SetLabel("Press Export to fill, then Ctrl+A and Ctrl+C to copy")
-    exportBox:SetFullWidth(true)
-    exportBox:SetNumLines(8)
-    exportBox:DisableButton(true)
-    exportGroup:AddChild(exportBox)
+    local addonInfo = AceGUI:Create("InlineGroup")
+    addonInfo:SetTitle("About")
+    addonInfo:SetFullWidth(true)
+    addonInfo:SetLayout("List")
 
-    local exportBtn = AceGUI:Create("Button")
-    exportBtn:SetText("Export Assistance Data")
-    exportBtn:SetWidth(220)
-    exportBtn:SetCallback("OnClick", function()
-        local AceSer = LibStub("AceSerializer-3.0", true)
-        if not AceSer then
-            TTSGCM:Print("|cffff5555AceSerializer-3.0 not loaded - cannot export|r")
-            return
-        end
-        local payload = TTSGCM.db.profile.assistance
-        local ok, str = pcall(function() return AceSer:Serialize(payload) end)
-        if not ok then
-            TTSGCM:Print("|cffff5555export failed:|r " .. tostring(str))
-            return
-        end
-        exportBox:SetText("TTSGCM-A1:" .. str)
-        exportBox:HighlightText()
-        TTSGCM:Print("export ready - select all and copy")
-    end)
-    exportGroup:AddChild(exportBtn)
-    container:AddChild(exportGroup)
-
-    -- Import section
-    local importGroup = AceGUI:Create("InlineGroup")
-    importGroup:SetTitle("Import")
-    importGroup:SetFullWidth(true)
-    importGroup:SetLayout("List")
-
-    local importBox = AceGUI:Create("MultiLineEditBox")
-    importBox:SetLabel("Paste an exported string here and press Import")
-    importBox:SetFullWidth(true)
-    importBox:SetNumLines(8)
-    importBox:DisableButton(true)
-    importGroup:AddChild(importBox)
-
-    local importBtn = AceGUI:Create("Button")
-    importBtn:SetText("Import (replaces current assistance data)")
-    importBtn:SetWidth(360)
-    importBtn:SetCallback("OnClick", function()
-        local raw = importBox:GetText()
-        if not raw or raw == "" then
-            TTSGCM:Print("|cffff5555nothing to import|r")
-            return
-        end
-        local payload = raw:match("^TTSGCM%-A1:(.+)$")
-        if not payload then
-            TTSGCM:Print("|cffff5555string doesn't look like a TTSGCM export (missing TTSGCM-A1: prefix)|r")
-            return
-        end
-        local AceSer = LibStub("AceSerializer-3.0", true)
-        if not AceSer then
-            TTSGCM:Print("|cffff5555AceSerializer-3.0 not loaded - cannot import|r")
-            return
-        end
-        local ok, decoded = AceSer:Deserialize(payload)
-        if not ok then
-            TTSGCM:Print("|cffff5555import failed:|r " .. tostring(decoded))
-            return
-        end
-        if type(decoded) ~= "table" then
-            TTSGCM:Print("|cffff5555imported data isn't a table - aborting|r")
-            return
-        end
-        StaticPopupDialogs["TTSGCM_CONFIRM_IMPORT"] = {
-            text = "Replace current assistance data with the imported data?\n"
-                .. "Your tracked-players list and consumable contribution data are NOT affected.\n"
-                .. "This cannot be undone.",
-            button1 = "Replace", button2 = "Cancel",
-            OnAccept = function()
-                TTSGCM.db.profile.assistance = decoded
-                -- Re-run validation so any missing fields are coerced back into shape
-                if TTSGCM.OnInitialize then
-                    -- We don't actually call OnInitialize again - just
-                    -- defensively ensure subtree fields exist by going
-                    -- through the same coercion validateProfile does.
-                    local A = TTSGCM.db.profile.assistance
-                    if type(A.fineRules)   ~= "table" then A.fineRules = {}   end
-                    if type(A.dkp)         ~= "table" then A.dkp = {}         end
-                    if type(A.dkpAuditLog) ~= "table" then A.dkpAuditLog = {} end
-                    if type(A.raidEvents)  ~= "table" then A.raidEvents = {}  end
-                    if type(A.weeklyDebt)  ~= "table" then A.weeklyDebt = {}  end
-                end
-                TTSGCM:Print("|cff33ff99assistance data imported.|r")
-                UI:RefreshMain()
-            end,
-            timeout = 0, whileDead = true, hideOnEscape = true,
-        }
-        StaticPopup_Show("TTSGCM_CONFIRM_IMPORT")
-    end)
-    importGroup:AddChild(importBtn)
-    container:AddChild(importGroup)
+    local aboutLbl = AceGUI:Create("Label")
+    aboutLbl:SetFullWidth(true)
+    local toc = (C_AddOns and C_AddOns.GetAddOnMetadata
+        and C_AddOns.GetAddOnMetadata("TTSGuildContributionManager", "Version"))
+        or "(unknown)"
+    aboutLbl:SetText("\n  TTS Guild Contribution Manager v" .. tostring(toc)
+        .. "\n  Three Tank Strat - guild bank weekly contribution + raid attendance tracker"
+        .. "\n  Type " .. colored("/gcm help", "ff66ccff") .. " for the full slash command reference.")
+    addonInfo:AddChild(aboutLbl)
+    container:AddChild(addonInfo)
 end
 
 local function buildMainContents(frame)
