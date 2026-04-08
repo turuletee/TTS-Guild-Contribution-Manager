@@ -17,6 +17,32 @@ local defaults = {
         hiatusActive = false,          -- when true, weeks are flagged as hiatus and don't accrue debt
         hiatusActivatedAt = 0,         -- timestamp when current hiatus was started (0 if never)
         -- firstWeekStart: timestamp of the user-chosen "week 1" Tuesday. Absent until configured.
+
+        -- Assistance Tracker subtree (separate from Consumable Contribution data)
+        assistance = {
+            -- All gold values are stored in copper.
+            fineRules = {
+                lateNoNoticeBase     = 5000 * 10000,    -- 5000g
+                absentNoNoticeBase   = 10000 * 10000,   -- 10000g
+                repeatTardyExtra     = 1000 * 10000,    -- +1000g per tardy after the first this tier
+                missingEnchantPerPc  = 1000 * 10000,    -- 1000g per missing enchant per raid day
+                dkpLateNoNotice      = -5,
+                dkpLateWithNotice    = -5,
+                dkpAbsentWithNotice  = -5,
+                dkpAbsentNoNotice    = -10,
+                dkpVacationPerWeek   = -10,
+                dkpRollDecay         = 5,               -- granted per relevant main-spec roll
+            },
+            tierStartedAt   = 0,         -- timestamp; counters reset by user when a new tier begins
+            tierLabel       = "",        -- optional human label like "Liberation of Undermine"
+            dkp             = {},        -- [playerName] = number (negative-only for now)
+            dkpAuditLog     = {},        -- list of { time, player, delta, reason, source }
+            raidEvents      = {},        -- [eventId] = { id, date, weekStart, scannedAt,
+                                         --              attendance = { [name] = statusCode } }
+            weeklyDebt      = {},        -- [weekStart] = { fines = {[name]=copper},
+                                         --                 paid  = {[name]=copper},
+                                         --                 enchantMissing = {[name]=count 0..42} }
+        },
     },
 }
 
@@ -55,6 +81,36 @@ local function validateProfile(profile)
     end
     if type(profile.hiatusActive) ~= "boolean" then profile.hiatusActive = false end
     if type(profile.hiatusActivatedAt) ~= "number" then profile.hiatusActivatedAt = 0 end
+
+    -- Assistance subtree
+    if type(profile.assistance) ~= "table" then profile.assistance = {} end
+    local A = profile.assistance
+    if type(A.fineRules) ~= "table" then A.fineRules = {} end
+    -- Don't overwrite user-customised fine rules; just ensure missing
+    -- fields fall back to the defaults at read-time. (defaults already
+    -- merge in the rest, but new installs will have them populated.)
+    if type(A.tierStartedAt) ~= "number" then A.tierStartedAt = 0 end
+    if type(A.tierLabel) ~= "string" then A.tierLabel = "" end
+    if type(A.dkp) ~= "table" then A.dkp = {} end
+    if type(A.dkpAuditLog) ~= "table" then A.dkpAuditLog = {} end
+    if type(A.raidEvents) ~= "table" then A.raidEvents = {} end
+    for k, v in pairs(A.raidEvents) do
+        if type(v) ~= "table" then
+            A.raidEvents[k] = nil
+        else
+            if type(v.attendance) ~= "table" then v.attendance = {} end
+        end
+    end
+    if type(A.weeklyDebt) ~= "table" then A.weeklyDebt = {} end
+    for k, v in pairs(A.weeklyDebt) do
+        if type(k) ~= "number" or type(v) ~= "table" then
+            A.weeklyDebt[k] = nil
+        else
+            if type(v.fines) ~= "table" then v.fines = {} end
+            if type(v.paid)  ~= "table" then v.paid  = {} end
+            if type(v.enchantMissing) ~= "table" then v.enchantMissing = {} end
+        end
+    end
 end
 
 function TTSGCM:OnInitialize()
@@ -212,6 +268,12 @@ local HELP_TEXT = table.concat({
     "  |cffffff00dumpweek|r - print raw current-week data for debugging",
     "  |cffffff00debug|r - toggle verbose scan diagnostics",
     "  |cffffff00hiatus|r - toggle raid hiatus (debt stops accruing)",
+    "|cffffff00Assistance Tracker (raid attendance + DKP):|r",
+    "  |cffffff00raid mark|r - scan current raid group, mark present/absent for today",
+    "  |cffffff00raid show|r - print today's attendance + DKP standings",
+    "  |cffffff00raid set <player> <status>|r - set status manually (ok|late_no|late_w|abs_w|abs_no|vac|cancel)",
+    "  |cffffff00raid dkp <player> <delta>|r - adjust DKP by delta (e.g. +5 or -10)",
+    "  |cffffff00raid resettier [label]|r - reset all DKP and attendance for a new tier",
 }, "\n")
 
 function TTSGCM:HandleSlashCommand(input)
@@ -283,6 +345,8 @@ function TTSGCM:DispatchSlashCommand(input)
         local nowOn = self:ToggleHiatus()
         self:Print("hiatus " .. (nowOn and "STARTED - debt accrual frozen" or "ENDED - debt accrual resumed"))
         if self.UI then self.UI:RefreshMain() end
+    elseif cmd == "raid" then
+        self:CmdRaid(rest)
     elseif cmd == "help" then
         self:Print(HELP_TEXT)
     else
@@ -561,4 +625,83 @@ function TTSGCM:PrintWeekInfo()
         self:Print("  first tracked week not set yet")
     end
     self:Print("  install: " .. date("!%Y-%m-%d %I:%M %p PST", self.db.profile.installTime - 8 * 3600))
+end
+
+-- ----------------------------------------------------------------------
+-- Assistance Tracker slash subcommands
+-- ----------------------------------------------------------------------
+
+local STATUS_ALIASES = {
+    ok          = "ok",
+    late_no     = "late_no_notice",
+    late_w      = "late_w_notice",
+    abs_w       = "absent_w_notice",
+    abs_no      = "absent_no_notice",
+    vac         = "vacation",
+    cancel      = "cancelled",
+}
+
+function TTSGCM:CmdRaid(args)
+    args = (args or ""):trim()
+    local sub, rest = args:match("^(%S+)%s*(.-)$")
+    sub = sub or ""
+    rest = rest or ""
+
+    if sub == "mark" then
+        local event, present, absent = self.AssistanceTracker:MarkRaidGroup()
+        self:Print(string.format("|cff33ff99raid event %s scanned:|r %d present, %d absent",
+            event.id, present, absent))
+        if self.UI then self.UI:RefreshMain() end
+    elseif sub == "show" then
+        self:CmdRaidShow()
+    elseif sub == "set" then
+        local name, statusKey = rest:match("^(%S+)%s+(%S+)$")
+        if not name or not statusKey then
+            self:Print("usage: /gcm raid set <player> <ok|late_no|late_w|abs_w|abs_no|vac|cancel>")
+            return
+        end
+        local status = STATUS_ALIASES[statusKey:lower()]
+        if not status then
+            self:Print("unknown status. valid: ok, late_no, late_w, abs_w, abs_no, vac, cancel")
+            return
+        end
+        local event = self.AssistanceTracker:GetEventForToday()
+        self.AssistanceTracker:SetStatus(event.id, name, status)
+        self:Print(string.format("set %s -> %s for %s", name, status, event.id))
+    elseif sub == "dkp" then
+        local name, deltaStr = rest:match("^(%S+)%s+([%-%+]?%d+)$")
+        if not name or not deltaStr then
+            self:Print("usage: /gcm raid dkp <player> <delta> (e.g. +5 or -10)")
+            return
+        end
+        local delta = tonumber(deltaStr)
+        self.AssistanceTracker:AdjustDKP(name, delta, "manual via /gcm raid dkp", "manual")
+        self:Print(string.format("%s DKP adjusted by %s -> %d", name, deltaStr, self.AssistanceTracker:GetDKP(name)))
+    elseif sub == "resettier" then
+        local label = rest ~= "" and rest or nil
+        self.AssistanceTracker:ResetTier(label)
+        self:Print("|cffff5555tier reset|r" .. (label and (" - " .. label) or ""))
+    else
+        self:Print("usage: /gcm raid <mark|show|set|dkp|resettier> ...")
+    end
+end
+
+function TTSGCM:CmdRaidShow()
+    local AT = self.AssistanceTracker
+    local event = AT:GetEventForToday()
+    self:Print(string.format("|cffffff00Today's raid event:|r %s", event.id))
+    local TP = self.TrackedPlayers
+    local list = TP:List()
+    if #list == 0 then
+        self:Print("(no tracked players)")
+        return
+    end
+    for _, name in ipairs(list) do
+        local status = (event.attendance and event.attendance[name]) or "-"
+        local label = AT.STATUS_LABELS[status] or status
+        local color = AT.STATUS_COLORS[status] or "ffffffff"
+        local dkp = AT:GetDKP(name)
+        self:Print(string.format("  |c%s%s|r  %s  |cff999999(DKP %d)|r",
+            color, label, name, dkp))
+    end
 end

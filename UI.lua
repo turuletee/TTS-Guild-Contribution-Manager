@@ -786,8 +786,9 @@ local function buildConsumableTab(container)
     end
 end
 
--- Placeholder for the upcoming Assistance Tracker tab. Kept intentionally
--- empty until the user provides the data model spec (Excel + DKP rules).
+-- Assistance Tracker tab. The data model and slash commands are wired
+-- in 0.6.1 but the rich UI lands in 0.6.2. For now this tab points the
+-- user at the chat commands so they can test the foundation.
 local function buildAssistanceTab(container)
     container:SetLayout("List")
     local heading = AceGUI:Create("Heading")
@@ -797,13 +798,16 @@ local function buildAssistanceTab(container)
 
     local lbl = AceGUI:Create("Label")
     lbl:SetFullWidth(true)
-    lbl:SetText("\n  " .. colored("Coming soon.", "ffffff00")
-        .. "\n\n  This tab will track raid attendance, late arrivals, and DKP."
-        .. "\n  The data model is on hold until the spec (Excel + DKP rules) is provided."
-        .. "\n\n  Planned features:"
-        .. "\n    - One-click \"Mark current raid group as Present\""
-        .. "\n    - Late-without-notice button per player"
-        .. "\n    - DKP scoring (rules pending)")
+    lbl:SetText("\n  " .. colored("Foundation ready - UI coming next.", "ffffff00")
+        .. "\n\n  Data model, status codes, and DKP / fine math are wired in 0.6.1."
+        .. "\n  The dedicated UI grid lands in 0.6.2."
+        .. "\n\n  Test from chat:"
+        .. "\n    " .. colored("/gcm raid mark", "ff66ccff") .. "             scan current raid group for today"
+        .. "\n    " .. colored("/gcm raid show", "ff66ccff") .. "             print today's attendance + DKP"
+        .. "\n    " .. colored("/gcm raid set <player> <status>", "ff66ccff") .. "  manual override"
+        .. "\n    " .. colored("/gcm raid dkp <player> <delta>", "ff66ccff") .. "   adjust DKP (e.g. +5 or -10)"
+        .. "\n    " .. colored("/gcm raid resettier [label]", "ff66ccff") .. "    start a fresh tier"
+        .. "\n\n  Status codes for the set command: ok, late_no, late_w, abs_w, abs_no, vac, cancel")
     container:AddChild(lbl)
 end
 
