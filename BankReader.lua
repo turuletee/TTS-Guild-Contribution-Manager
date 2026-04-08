@@ -67,6 +67,22 @@ local function normalizeName(name)
     return name:gsub("%-.*$", "")
 end
 
+-- WoW player names are unique case-insensitively but the bank log and the
+-- guild roster sometimes return them in slightly different casings. To
+-- avoid losing deposits because the bank log returned "alanas" while the
+-- tracked entry is "Alanas", look up the canonical tracked name and use it
+-- as the key. Falls back to the original name if no tracked match exists.
+local function canonicalizeAgainstTracked(name)
+    if not name then return name end
+    local tracked = TTSGCM.db.profile.trackedPlayers
+    if tracked[name] then return name end  -- exact match, fast path
+    local lower = name:lower()
+    for trackedName in pairs(tracked) do
+        if trackedName:lower() == lower then return trackedName end
+    end
+    return name
+end
+
 -- ----------------------------------------------------------------------
 -- Public API
 -- ----------------------------------------------------------------------
@@ -106,8 +122,9 @@ function BankReader:ProcessLog()
         typeCounts[typeKey] = (typeCounts[typeKey] or 0) + 1
         if txType == "deposit" and type(name) == "string" and type(amount) == "number" and amount > 0 then
             local txTime = now - elapsedToSeconds(years, months, days, hours)
+            local cleanName = canonicalizeAgainstTracked(normalizeName(name))
             table.insert(txs, {
-                name = normalizeName(name),
+                name = cleanName,
                 amount = amount,
                 time = txTime,
                 week = W:GetWeekStart(txTime),

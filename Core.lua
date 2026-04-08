@@ -94,7 +94,10 @@ end
 function TTSGCM:GUILDBANKLOG_UPDATE()
     self:Print("|cff66ccffguild bank log update received|r")
     self.BankReader:OnGuildBankLogUpdate()
-    if self.UI then self.UI:RefreshMain() end
+    if self.UI then
+        self.UI:RefreshMain()
+        self:Print("|cff66ccffmain UI refresh requested|r")
+    end
 end
 
 -- ----------------------------------------------------------------------
@@ -116,6 +119,7 @@ local HELP_TEXT = table.concat({
     "  |cffffff00prune|r - delete eligible old weeks now",
     "  |cffffff00show|r - open the main window",
     "  |cffffff00minimap|r - toggle the minimap button visibility",
+    "  |cffffff00dumpweek|r - print raw current-week data for debugging",
 }, "\n")
 
 function TTSGCM:HandleSlashCommand(input)
@@ -178,6 +182,8 @@ function TTSGCM:DispatchSlashCommand(input)
         self.MinimapButton:Toggle()
         local hidden = self.db.profile.minimap and self.db.profile.minimap.hide
         self:Print("minimap button " .. (hidden and "hidden" or "shown"))
+    elseif cmd == "dumpweek" then
+        self:CmdDumpWeek()
     elseif cmd == "help" then
         self:Print(HELP_TEXT)
     else
@@ -390,6 +396,42 @@ function TTSGCM:CmdPrune()
         self:Print("  - " .. W:FormatWeek(ws))
     end
     self.HistoryPruner:Prune()
+end
+
+function TTSGCM:CmdDumpWeek()
+    local W = self.WeekEngine
+    local D = self.DebtEngine
+    local current = W:GetCurrentWeekStart()
+    local week = self.db.profile.weeklyHistory[current]
+    self:Print("|cffffff00=== Current week dump ===|r")
+    self:Print("week start: " .. W:FormatWeek(current))
+    self:Print("regular min:  " .. D:FormatCopper(D:GetCurrentWeekMin()))
+    self:Print("alch min:     " .. D:FormatCopper(D:GetCurrentWeekAlchemistMin()))
+    if not week then
+        self:Print("|cffaaaaaano data stored for this week|r")
+        return
+    end
+    self:Print("contributions (from bank):")
+    local any = false
+    for n, c in pairs(week.contributions or {}) do
+        any = true
+        local tracked = self.TrackedPlayers:IsTracked(n) and "|cff33ff99[tracked]|r" or "|cffff5555[NOT tracked]|r"
+        self:Print(string.format("  %s %s = %s", tracked, n, D:FormatCopper(c)))
+    end
+    if not any then self:Print("  (none)") end
+    self:Print("manual marks:")
+    any = false
+    for n, c in pairs(week.manualMarks or {}) do
+        any = true
+        self:Print(string.format("  %s = %s", n, D:FormatCopper(c)))
+    end
+    if not any then self:Print("  (none)") end
+    self:Print("tracked players (" .. self.TrackedPlayers:Count() .. "):")
+    for _, n in ipairs(self.TrackedPlayers:List()) do
+        local owed = D:GetOwedAtStartOfWeek(n, current)
+        local paid = D:GetPaidForWeek(n, current)
+        self:Print(string.format("  %s: owed=%s, paid=%s", n, D:FormatCopper(owed), D:FormatCopper(paid)))
+    end
 end
 
 function TTSGCM:CmdSetFirstWeek(args)

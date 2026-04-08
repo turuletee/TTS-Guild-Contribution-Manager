@@ -41,11 +41,13 @@ end
 -- ----------------------------------------------------------------------
 
 -- Returns "paid" | "partial" | "unpaid" | "nodebt".
+-- Always returns the real paid amount so the row can display deposits
+-- even when no minimum has been set yet for the week.
 local function statusFor(name, weekStart)
     local D = TTSGCM.DebtEngine
     local owed = D:GetOwedAtStartOfWeek(name, weekStart)
-    if owed <= 0 then return "nodebt", 0, 0, 0 end
     local paid = D:GetPaidForWeek(name, weekStart)
+    if owed <= 0 then return "nodebt", 0, paid, 0 end
     local rem = math.max(0, owed - paid)
     if rem <= 0 then return "paid", owed, paid, rem end
     if paid > 0 then return "partial", owed, paid, rem end
@@ -202,10 +204,17 @@ local function buildCompactRow(parent, name, currentWeek)
     nameLabel:SetWidth(180)
     row:AddChild(nameLabel)
 
-    -- Paid / owed text
+    -- Paid / owed text. Always show the paid amount even when there's
+    -- no minimum yet, otherwise users can't see that the bank scan is
+    -- actually picking up their deposits.
     local amountLabel = AceGUI:Create("Label")
     if s == "nodebt" then
-        amountLabel:SetText(colored("no minimum set", "ff999999"))
+        if paid > 0 then
+            amountLabel:SetText(string.format("paid %s   %s",
+                D:FormatCopper(paid), colored("(no minimum set)", "ff999999")))
+        else
+            amountLabel:SetText(colored("no minimum set", "ff999999"))
+        end
     else
         amountLabel:SetText(string.format("%s / %s   (%s left)",
             D:FormatCopper(paid), D:FormatCopper(owed), D:FormatCopper(rem)))
