@@ -36,8 +36,6 @@ local TTSBT = LibStub("AceAddon-3.0"):GetAddon("TTSBankTracker")
 local BankReader = {}
 TTSBT.BankReader = BankReader
 
-local MONEY_LOG_TAB = (MAX_GUILD_BANK_TABS or 6) + 1
-
 -- ----------------------------------------------------------------------
 -- Internal helpers
 -- ----------------------------------------------------------------------
@@ -74,27 +72,26 @@ end
 -- ----------------------------------------------------------------------
 
 function BankReader:RequestLog()
-    if not IsInGuild() then return end
-    if QueryGuildBankLog then
-        QueryGuildBankLog(MONEY_LOG_TAB)
-    end
+    local C = TTSBT.Compat
+    if not C:IsInGuild() then return end
+    C:QueryGuildBankLog()
 end
 
 -- Parse the currently-loaded money log and update db.profile.weeklyHistory.
 -- Safe to call repeatedly: idempotent except for the "current week is always
 -- replaced" semantics described at the top of this file.
 function BankReader:ProcessLog()
-    if not GetNumGuildBankMoneyTransactions then return 0 end
-    local n = GetNumGuildBankMoneyTransactions() or 0
+    local C = TTSBT.Compat
+    local n = C:GetNumGuildBankMoneyTransactions()
     if n == 0 then return 0 end
 
-    local now = time()
+    local now = C:Now()
     local W = TTSBT.WeekEngine
     local txs = {}
 
     for i = 1, n do
-        local txType, name, amount, years, months, days, hours = GetGuildBankMoneyTransaction(i)
-        if txType == "deposit" and name and amount and amount > 0 then
+        local txType, name, amount, years, months, days, hours = C:GetGuildBankMoneyTransaction(i)
+        if txType == "deposit" and type(name) == "string" and type(amount) == "number" and amount > 0 then
             local txTime = now - elapsedToSeconds(years, months, days, hours)
             table.insert(txs, {
                 name = normalizeName(name),

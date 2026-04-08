@@ -53,11 +53,8 @@ local rosterCacheTime = 0
 local ROSTER_CACHE_SECONDS = 15
 
 function TrackedPlayers:RequestRosterUpdate()
-    if not IsInGuild() then return false end
-    if C_GuildInfo and C_GuildInfo.GuildRoster then
-        C_GuildInfo.GuildRoster()
-    end
-    return true
+    if not TTSBT.Compat:IsInGuild() then return false end
+    return TTSBT.Compat:RequestGuildRoster()
 end
 
 function TrackedPlayers:InvalidateRosterCache()
@@ -70,21 +67,22 @@ end
 --   rankIndex (number)  - exact match
 --   nameQuery (string)  - case-insensitive substring match
 function TrackedPlayers:GetRoster(filters)
-    if not IsInGuild() then return {} end
+    local C = TTSBT.Compat
+    if not C:IsInGuild() then return {} end
     filters = filters or {}
-    local now = time()
+    local now = C:Now()
     if not rosterCache or (now - rosterCacheTime) > ROSTER_CACHE_SECONDS then
         rosterCache = {}
-        local count = GetNumGuildMembers() or 0
+        local count = C:GetNumGuildMembers()
         for i = 1, count do
-            local name, rankName, rankIndex, level, _, _, _, _, _, _, class = GetGuildRosterInfo(i)
-            if name then
+            local name, rankName, rankIndex, level, _, _, _, _, _, _, class = C:GetGuildRosterInfo(i)
+            if name and rankIndex then
                 table.insert(rosterCache, {
                     name = name,
-                    rankName = rankName,
+                    rankName = rankName or "?",
                     rankIndex = rankIndex,
-                    level = level,
-                    class = class,
+                    level = level or 0,
+                    class = class or "?",
                 })
             end
         end

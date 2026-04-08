@@ -14,8 +14,33 @@ local defaults = {
     },
 }
 
+-- Defensive validation of saved-variables shape. Runs at load. Saved
+-- data could be malformed for any number of reasons (manual edits,
+-- version downgrades, partially-written files), so we silently coerce
+-- anything wrong into a sane shape rather than crashing.
+local function validateProfile(profile)
+    if type(profile.weeklyHistory) ~= "table" then
+        profile.weeklyHistory = {}
+    end
+    for k, v in pairs(profile.weeklyHistory) do
+        if type(k) ~= "number" or type(v) ~= "table" then
+            profile.weeklyHistory[k] = nil
+        else
+            if type(v.contributions) ~= "table" then v.contributions = {} end
+            if type(v.manualMarks) ~= "table" then v.manualMarks = {} end
+            if v.minimum ~= nil and type(v.minimum) ~= "number" then v.minimum = nil end
+        end
+    end
+    if type(profile.trackedPlayers) ~= "table" then profile.trackedPlayers = {} end
+    if type(profile.minContribution) ~= "number" then profile.minContribution = 0 end
+    if profile.firstWeekStart ~= nil and type(profile.firstWeekStart) ~= "number" then
+        profile.firstWeekStart = nil
+    end
+end
+
 function TTSBT:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("TTSBankTrackerDB", defaults, true)
+    validateProfile(self.db.profile)
     if (self.db.profile.installTime or 0) == 0 then
         self.db.profile.installTime = time()
     end
@@ -27,12 +52,12 @@ function TTSBT:OnEnable()
     self:RegisterEvent("GUILD_ROSTER_UPDATE")
     self:RegisterEvent("GUILDBANKFRAME_OPENED")
     self:RegisterEvent("GUILDBANKLOG_UPDATE")
-    self:RegisterEvent("PLAYER_LOGIN")
     self.TrackedPlayers:RequestRosterUpdate()
     self.MinimapButton:Initialize()
-end
-
-function TTSBT:PLAYER_LOGIN()
+    -- Run pruning directly here. We previously registered PLAYER_LOGIN
+    -- and pruned in its handler, but AceAddon's OnEnable typically runs
+    -- AFTER PLAYER_LOGIN has already fired, so the handler would never
+    -- be called on first login. OnEnable is the right hook.
     local n = self.HistoryPruner:Prune()
     if n > 0 then
         self:Print(string.format("pruned %d old week(s) from history", n))
@@ -72,6 +97,13 @@ local HELP_TEXT = table.concat({
 }, "\n")
 
 function TTSBT:HandleSlashCommand(input)
+    local ok, err = pcall(self.DispatchSlashCommand, self, input)
+    if not ok then
+        self:Print("|cffff5555command error:|r " .. tostring(err))
+    end
+end
+
+function TTSBT:DispatchSlashCommand(input)
     input = (input or ""):trim()
     if input == "" then
         -- Bare /ttsbt opens the main window
