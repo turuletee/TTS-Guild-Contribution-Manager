@@ -93,19 +93,40 @@ function DebtEngine:GetMinForPlayerWeek(player, weekStart)
 end
 
 function DebtEngine:SetCurrentWeekMin(copperAmount)
-    if (copperAmount or 0) < 0 then return end
-    local W = TTSGCM.WeekEngine
-    local week = ensureWeek(W:GetCurrentWeekStart())
-    week.minimum = copperAmount
-    TTSGCM.db.profile.minContribution = copperAmount
+    self:SetMinForWeek(TTSGCM.WeekEngine:GetCurrentWeekStart(), copperAmount, true)
 end
 
 function DebtEngine:SetCurrentWeekAlchemistMin(copperAmount)
+    self:SetAlchemistMinForWeek(TTSGCM.WeekEngine:GetCurrentWeekStart(), copperAmount, true)
+end
+
+-- Stamp a regular minimum onto an arbitrary week (past or current).
+-- updateSticky: if true, also update the global default that future
+-- weeks fall back to. The UI passes true when editing the current
+-- week and false when editing a past week (because changing a past
+-- week shouldn't quietly change new week defaults).
+function DebtEngine:SetMinForWeek(weekStart, copperAmount, updateSticky)
     if (copperAmount or 0) < 0 then return end
     local W = TTSGCM.WeekEngine
-    local week = ensureWeek(W:GetCurrentWeekStart())
+    if type(weekStart) ~= "number" then return end
+    weekStart = W:GetWeekStart(weekStart)
+    local week = ensureWeek(weekStart)
+    week.minimum = copperAmount
+    if updateSticky then
+        TTSGCM.db.profile.minContribution = copperAmount
+    end
+end
+
+function DebtEngine:SetAlchemistMinForWeek(weekStart, copperAmount, updateSticky)
+    if (copperAmount or 0) < 0 then return end
+    local W = TTSGCM.WeekEngine
+    if type(weekStart) ~= "number" then return end
+    weekStart = W:GetWeekStart(weekStart)
+    local week = ensureWeek(weekStart)
     week.alchemistMinimum = copperAmount
-    TTSGCM.db.profile.alchemistMinContribution = copperAmount
+    if updateSticky then
+        TTSGCM.db.profile.alchemistMinContribution = copperAmount
+    end
 end
 
 function DebtEngine:GetCurrentWeekMin()

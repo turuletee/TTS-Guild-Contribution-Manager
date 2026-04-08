@@ -20,19 +20,30 @@ local UI = {}
 TTSGCM.UI = UI
 
 -- ----------------------------------------------------------------------
--- Main window state
+-- Main window state and view router
 -- ----------------------------------------------------------------------
+--
+-- Views:
+--   "list"        - current week, all tracked players
+--   "detail"      - one player, ANY week (detailContext.weekStart)
+--   "history"    - list of past weeks (last 5 + any with debt)
+--   "weekplayers" - one past week, all tracked players for that week
+--
+-- detailContext = { player, weekStart, backTo }
+-- weekContext   = { weekStart, backTo }
 
-local mainFrame = nil       -- AceGUI Frame, or nil when closed
-local mainView = "list"     -- "list" or "detail"
-local detailPlayer = nil    -- name being shown in detail view
+local mainFrame = nil
+local mainView = "list"
+local detailContext = nil
+local weekContext = nil
 
 local function closeMain()
     if mainFrame then
         AceGUI:Release(mainFrame)
         mainFrame = nil
         mainView = "list"
-        detailPlayer = nil
+        detailContext = nil
+        weekContext = nil
     end
 end
 
@@ -269,6 +280,12 @@ local function buildBottomBar(parent)
     end)
     bottom:AddChild(scanBtn)
 
+    local historyBtn = AceGUI:Create("Button")
+    historyBtn:SetText("Past Weeks")
+    historyBtn:SetWidth(120)
+    historyBtn:SetCallback("OnClick", function() UI:ShowHistory() end)
+    bottom:AddChild(historyBtn)
+
     local pruneBtn = AceGUI:Create("Button")
     pruneBtn:SetText("Prune History")
     pruneBtn:SetWidth(120)
@@ -331,15 +348,18 @@ local function buildListView(frame)
 end
 
 -- ----------------------------------------------------------------------
--- DETAIL VIEW (per-player)
+-- DETAIL VIEW (per-player, ANY week)
 -- ----------------------------------------------------------------------
 
-local function buildDetailView(frame, name)
+local function buildDetailView(frame, ctx)
     local W = TTSGCM.WeekEngine
     local D = TTSGCM.DebtEngine
     local TP = TTSGCM.TrackedPlayers
+    local name = ctx.player
+    local weekStart = ctx.weekStart or W:GetCurrentWeekStart()
     local currentWeek = W:GetCurrentWeekStart()
-    local s, owed, paid, rem = statusFor(name, currentWeek)
+    local isCurrent = (weekStart == currentWeek)
+    local s, owed, paid, rem = statusFor(name, weekStart)
     local color = STATUS_COLORS[s]
 
     -- Top: back button + week label
@@ -350,11 +370,12 @@ local function buildDetailView(frame, name)
     local backBtn = AceGUI:Create("Button")
     backBtn:SetText("< Back")
     backBtn:SetWidth(90)
-    backBtn:SetCallback("OnClick", function() UI:ShowList() end)
+    backBtn:SetCallback("OnClick", function() UI:Back() end)
     top:AddChild(backBtn)
 
     local weekLabel = AceGUI:Create("Label")
-    weekLabel:SetText("  " .. colored(W:FormatWeek(currentWeek), "ffaaaaaa"))
+    local weekTag = isCurrent and " (current week)" or " (past week)"
+    weekLabel:SetText("  " .. colored(W:FormatWeek(weekStart) .. weekTag, "ffaaaaaa"))
     weekLabel:SetWidth(400)
     top:AddChild(weekLabel)
     frame:AddChild(top)
@@ -382,11 +403,11 @@ local function buildDetailView(frame, name)
 
     -- Status block
     local statusGroup = AceGUI:Create("InlineGroup")
-    statusGroup:SetTitle("This week")
+    statusGroup:SetTitle(isCurrent and "This week" or "Selected week")
     statusGroup:SetFullWidth(true)
     statusGroup:SetLayout("List")
 
-    local minStr = D:FormatCopper(D:GetMinForPlayerWeek(name, currentWeek))
+    local minStr = D:FormatCopper(D:GetMinForPlayerWeek(name, weekStart))
     local owedLbl = AceGUI:Create("Label")
     owedLbl:SetFullWidth(true)
     owedLbl:SetText("Applicable minimum:  " .. minStr)
@@ -399,7 +420,7 @@ local function buildDetailView(frame, name)
 
     local paidLbl = AceGUI:Create("Label")
     paidLbl:SetFullWidth(true)
-    local week = TTSGCM.db.profile.weeklyHistory[currentWeek]
+    local week = TTSGCM.db.profile.weeklyHistory[weekStart]
     local bankPaid = (week and week.contributions and week.contributions[name]) or 0
     local manualPaid = (week and week.manualMarks and week.manualMarks[name]) or 0
     paidLbl:SetText(string.format("Paid:  %s   (bank %s, manual %s)",
@@ -413,7 +434,7 @@ local function buildDetailView(frame, name)
 
     frame:AddChild(statusGroup)
 
-    -- Manual mark controls
+    -- Manual mark controls (operate on the SELECTED week, not necessarily current)
     local markGroup = AceGUI:Create("InlineGroup")
     markGroup:SetTitle("Manually mark payment (off-bank: mail/trade)")
     markGroup:SetFullWidth(true)
@@ -439,8 +460,8 @@ local function buildDetailView(frame, name)
             TTSGCM:Print("nothing to mark (already paid or amount is zero)")
             return
         end
-        D:ManualMark(name, currentWeek, copper)
-        UI:RefreshMain()  -- rebuilds detail view since we're still in detail mode
+        D:ManualMark(name, weekStart, copper)
+        UI:RefreshMain()
     end)
     markGroup:AddChild(markBtn)
 
@@ -448,29 +469,281 @@ local function buildDetailView(frame, name)
     clearBtn:SetText("Clear Manual")
     clearBtn:SetWidth(120)
     clearBtn:SetCallback("OnClick", function()
-        D:ClearManualMark(name, currentWeek)
+        D:ClearManualMark(name, weekStart)
         UI:RefreshMain()
     end)
     markGroup:AddChild(clearBtn)
 
     frame:AddChild(markGroup)
 
-    -- Danger zone
-    local dangerGroup = AceGUI:Create("InlineGroup")
-    dangerGroup:SetTitle("Tracking")
-    dangerGroup:SetFullWidth(true)
-    dangerGroup:SetLayout("Flow")
+    -- Danger zone (only show on current week so we don't accidentally
+    -- untrack a player from inside a past-week edit session)
+    if isCurrent then
+        local dangerGroup = AceGUI:Create("InlineGroup")
+        dangerGroup:SetTitle("Tracking")
+        dangerGroup:SetFullWidth(true)
+        dangerGroup:SetLayout("Flow")
 
-    local untrackBtn = AceGUI:Create("Button")
-    untrackBtn:SetText("Stop tracking " .. name)
-    untrackBtn:SetWidth(220)
-    untrackBtn:SetCallback("OnClick", function()
-        TP:Remove(name)
-        UI:ShowList()
+        local untrackBtn = AceGUI:Create("Button")
+        untrackBtn:SetText("Stop tracking " .. name)
+        untrackBtn:SetWidth(220)
+        untrackBtn:SetCallback("OnClick", function()
+            TP:Remove(name)
+            UI:ShowList()
+        end)
+        dangerGroup:AddChild(untrackBtn)
+        frame:AddChild(dangerGroup)
+    end
+end
+
+-- ----------------------------------------------------------------------
+-- HISTORY VIEW (list of past weeks)
+-- ----------------------------------------------------------------------
+
+local function buildHistoryView(frame)
+    local W = TTSGCM.WeekEngine
+    local D = TTSGCM.DebtEngine
+    local TP = TTSGCM.TrackedPlayers
+    local currentWeek = W:GetCurrentWeekStart()
+
+    -- Top bar
+    local top = AceGUI:Create("SimpleGroup")
+    top:SetFullWidth(true)
+    top:SetLayout("Flow")
+
+    local backBtn = AceGUI:Create("Button")
+    backBtn:SetText("< Back")
+    backBtn:SetWidth(90)
+    backBtn:SetCallback("OnClick", function() UI:ShowList() end)
+    top:AddChild(backBtn)
+
+    local title = AceGUI:Create("Label")
+    title:SetText("  " .. colored("Past weeks", "ffffff00")
+        .. "  |cff999999(last 5 weeks + any week with outstanding debt)|r")
+    title:SetWidth(560)
+    top:AddChild(title)
+    frame:AddChild(top)
+
+    local heading = AceGUI:Create("Heading")
+    heading:SetText("Edit minimums and inspect past weeks")
+    heading:SetFullWidth(true)
+    frame:AddChild(heading)
+
+    local weeks = TTSGCM.HistoryPruner:GetVisibleWeeks()
+
+    local scroll = AceGUI:Create("ScrollFrame")
+    scroll:SetFullWidth(true)
+    scroll:SetLayout("List")
+    scroll:SetHeight(460)
+    frame:AddChild(scroll)
+
+    for _, ws in ipairs(weeks) do
+        local row = AceGUI:Create("InlineGroup")
+        row:SetFullWidth(true)
+        row:SetLayout("Flow")
+        local idx = TTSGCM.db.profile.firstWeekStart
+            and W:GetWeekIndex(ws, TTSGCM.db.profile.firstWeekStart)
+            or nil
+        local label = (ws == currentWeek) and " (current)" or ""
+        local title = idx and ("Week " .. idx .. " - " .. W:FormatWeek(ws) .. label)
+            or (W:FormatWeek(ws) .. label)
+        row:SetTitle(title)
+
+        -- Min input
+        local minBox = AceGUI:Create("EditBox")
+        minBox:SetLabel("Min (gold)")
+        minBox:SetWidth(120)
+        minBox:SetText(tostring(D:CopperToGold(D:GetMinForWeek(ws))))
+        minBox:SetCallback("OnEnterPressed", function(_, _, value)
+            local g = tonumber(value)
+            if g and g >= 0 then
+                D:SetMinForWeek(ws, D:GoldToCopper(g), ws == currentWeek)
+                UI:RefreshMain()
+            end
+        end)
+        row:AddChild(minBox)
+
+        -- Alchemist min input
+        local alchBox = AceGUI:Create("EditBox")
+        alchBox:SetLabel("Alchemist Min (gold)")
+        alchBox:SetWidth(160)
+        alchBox:SetText(tostring(D:CopperToGold(D:GetAlchemistMinForWeek(ws))))
+        alchBox:SetCallback("OnEnterPressed", function(_, _, value)
+            local g = tonumber(value)
+            if g and g >= 0 then
+                D:SetAlchemistMinForWeek(ws, D:GoldToCopper(g), ws == currentWeek)
+                UI:RefreshMain()
+            end
+        end)
+        row:AddChild(alchBox)
+
+        -- Summary: paid count, unpaid count, total contributions
+        local paidCount, unpaidCount, partialCount, totalPaid = 0, 0, 0, 0
+        for _, name in ipairs(TP:List()) do
+            local stat, _, p, _ = statusFor(name, ws)
+            totalPaid = totalPaid + p
+            if stat == "paid" or stat == "nodebt" then paidCount = paidCount + 1
+            elseif stat == "partial" then partialCount = partialCount + 1
+            else unpaidCount = unpaidCount + 1 end
+        end
+        local sum = AceGUI:Create("Label")
+        sum:SetText(string.format("  %s  %s  %s    Total: %s",
+            colored("P:" .. paidCount, STATUS_COLORS.paid),
+            colored("Pa:" .. partialCount, STATUS_COLORS.partial),
+            colored("U:" .. unpaidCount, STATUS_COLORS.unpaid),
+            D:FormatCopper(totalPaid)))
+        sum:SetWidth(280)
+        row:AddChild(sum)
+
+        -- View players button
+        local viewBtn = AceGUI:Create("Button")
+        viewBtn:SetText("View Players")
+        viewBtn:SetWidth(120)
+        viewBtn:SetCallback("OnClick", function()
+            UI:OpenWeekPlayers(ws)
+        end)
+        row:AddChild(viewBtn)
+
+        scroll:AddChild(row)
+    end
+end
+
+-- ----------------------------------------------------------------------
+-- WEEK PLAYERS VIEW (one past week, all players)
+-- ----------------------------------------------------------------------
+
+local function buildWeekPlayersView(frame, ctx)
+    local W = TTSGCM.WeekEngine
+    local D = TTSGCM.DebtEngine
+    local TP = TTSGCM.TrackedPlayers
+    local weekStart = ctx.weekStart
+    local currentWeek = W:GetCurrentWeekStart()
+
+    -- Top: back + label
+    local top = AceGUI:Create("SimpleGroup")
+    top:SetFullWidth(true)
+    top:SetLayout("Flow")
+
+    local backBtn = AceGUI:Create("Button")
+    backBtn:SetText("< Back")
+    backBtn:SetWidth(90)
+    backBtn:SetCallback("OnClick", function() UI:ShowHistory() end)
+    top:AddChild(backBtn)
+
+    local label = AceGUI:Create("Label")
+    local idx = TTSGCM.db.profile.firstWeekStart
+        and W:GetWeekIndex(weekStart, TTSGCM.db.profile.firstWeekStart)
+        or nil
+    local txt = idx and ("Week " .. idx .. " - " .. W:FormatWeek(weekStart))
+        or W:FormatWeek(weekStart)
+    label:SetText("  " .. colored(txt, "ffffff00"))
+    label:SetWidth(500)
+    top:AddChild(label)
+    frame:AddChild(top)
+
+    -- Min editors for this week (also editable from history view but
+    -- handy to have them right here too)
+    local editRow = AceGUI:Create("SimpleGroup")
+    editRow:SetFullWidth(true)
+    editRow:SetLayout("Flow")
+
+    local minBox = AceGUI:Create("EditBox")
+    minBox:SetLabel("Min (gold)")
+    minBox:SetWidth(140)
+    minBox:SetText(tostring(D:CopperToGold(D:GetMinForWeek(weekStart))))
+    minBox:SetCallback("OnEnterPressed", function(_, _, value)
+        local g = tonumber(value)
+        if g and g >= 0 then
+            D:SetMinForWeek(weekStart, D:GoldToCopper(g), weekStart == currentWeek)
+            UI:RefreshMain()
+        end
     end)
-    dangerGroup:AddChild(untrackBtn)
+    editRow:AddChild(minBox)
 
-    frame:AddChild(dangerGroup)
+    local alchBox = AceGUI:Create("EditBox")
+    alchBox:SetLabel("Alchemist Min (gold)")
+    alchBox:SetWidth(180)
+    alchBox:SetText(tostring(D:CopperToGold(D:GetAlchemistMinForWeek(weekStart))))
+    alchBox:SetCallback("OnEnterPressed", function(_, _, value)
+        local g = tonumber(value)
+        if g and g >= 0 then
+            D:SetAlchemistMinForWeek(weekStart, D:GoldToCopper(g), weekStart == currentWeek)
+            UI:RefreshMain()
+        end
+    end)
+    editRow:AddChild(alchBox)
+
+    frame:AddChild(editRow)
+
+    -- Player rows for this specific week
+    local list = TP:List()
+    local scroll = AceGUI:Create("ScrollFrame")
+    scroll:SetFullWidth(true)
+    scroll:SetLayout("List")
+    scroll:SetHeight(420)
+    frame:AddChild(scroll)
+
+    if #list == 0 then
+        local empty = AceGUI:Create("Label")
+        empty:SetText("\n  No tracked players.")
+        empty:SetFullWidth(true)
+        scroll:AddChild(empty)
+    else
+        local rank = { unpaid = 0, partial = 1, paid = 2, nodebt = 3 }
+        table.sort(list, function(a, b)
+            local sa = statusFor(a, weekStart)
+            local sb = statusFor(b, weekStart)
+            if rank[sa] ~= rank[sb] then return rank[sa] < rank[sb] end
+            return a < b
+        end)
+        for _, name in ipairs(list) do
+            -- Reuse the compact row layout but pass the specific weekStart
+            local s, owed, paid, rem = statusFor(name, weekStart)
+            local color = STATUS_COLORS[s]
+            local row = AceGUI:Create("SimpleGroup")
+            row:SetFullWidth(true)
+            row:SetLayout("Flow")
+
+            local statusLabel = AceGUI:Create("Label")
+            statusLabel:SetText(colored("[" .. STATUS_LABELS[s] .. "]", color))
+            statusLabel:SetWidth(85)
+            row:AddChild(statusLabel)
+
+            local nameLabel = AceGUI:Create("Label")
+            local nameText = colored(name, color)
+            if D:IsAlchemist(name) then
+                nameText = nameText .. colored(" [A]", "ff66ccff")
+            end
+            nameLabel:SetText(nameText)
+            nameLabel:SetWidth(180)
+            row:AddChild(nameLabel)
+
+            local amountLabel = AceGUI:Create("Label")
+            if s == "nodebt" then
+                if paid > 0 then
+                    amountLabel:SetText(string.format("paid %s   %s",
+                        D:FormatCopper(paid), colored("(no minimum set)", "ff999999")))
+                else
+                    amountLabel:SetText(colored("no minimum set", "ff999999"))
+                end
+            else
+                amountLabel:SetText(string.format("%s / %s   (%s left)",
+                    D:FormatCopper(paid), D:FormatCopper(owed), D:FormatCopper(rem)))
+            end
+            amountLabel:SetWidth(420)
+            row:AddChild(amountLabel)
+
+            local editBtn = AceGUI:Create("Button")
+            editBtn:SetText("Edit")
+            editBtn:SetWidth(70)
+            editBtn:SetCallback("OnClick", function()
+                UI:OpenDetail(name, weekStart, "weekplayers")
+            end)
+            row:AddChild(editBtn)
+
+            scroll:AddChild(row)
+        end
+    end
 end
 
 -- ----------------------------------------------------------------------
@@ -481,11 +754,17 @@ local function buildMainContents(frame)
     frame:ReleaseChildren()
     frame:SetLayout("List")
 
-    if mainView == "detail" and detailPlayer and TTSGCM.TrackedPlayers:IsTracked(detailPlayer) then
-        buildDetailView(frame, detailPlayer)
+    if mainView == "detail" and detailContext and detailContext.player
+            and TTSGCM.TrackedPlayers:IsTracked(detailContext.player) then
+        buildDetailView(frame, detailContext)
+    elseif mainView == "history" then
+        buildHistoryView(frame)
+    elseif mainView == "weekplayers" and weekContext and weekContext.weekStart then
+        buildWeekPlayersView(frame, weekContext)
     else
         mainView = "list"
-        detailPlayer = nil
+        detailContext = nil
+        weekContext = nil
         buildListView(frame)
     end
 end
@@ -528,10 +807,15 @@ function UI:ToggleMain()
     if mainFrame then closeMain() else self:OpenMain() end
 end
 
-function UI:OpenDetail(name)
+function UI:OpenDetail(name, weekStart, backTo)
     if not name then return end
+    local W = TTSGCM.WeekEngine
     mainView = "detail"
-    detailPlayer = name
+    detailContext = {
+        player = name,
+        weekStart = weekStart or W:GetCurrentWeekStart(),
+        backTo = backTo or "list",
+    }
     if not mainFrame then
         self:OpenMain()
     else
@@ -539,10 +823,38 @@ function UI:OpenDetail(name)
     end
 end
 
+function UI:OpenWeekPlayers(weekStart)
+    if not weekStart then return end
+    mainView = "weekplayers"
+    weekContext = { weekStart = weekStart, backTo = "history" }
+    if not mainFrame then self:OpenMain() else self:RefreshMain() end
+end
+
 function UI:ShowList()
     mainView = "list"
-    detailPlayer = nil
+    detailContext = nil
+    weekContext = nil
     if mainFrame then self:RefreshMain() end
+end
+
+function UI:ShowHistory()
+    mainView = "history"
+    detailContext = nil
+    if mainFrame then self:RefreshMain() else self:OpenMain() end
+end
+
+-- Smart back: returns to the view we came from, based on context.
+function UI:Back()
+    if mainView == "detail" and detailContext and detailContext.backTo then
+        if detailContext.backTo == "weekplayers" and weekContext and weekContext.weekStart then
+            self:OpenWeekPlayers(weekContext.weekStart)
+            return
+        elseif detailContext.backTo == "history" then
+            self:ShowHistory()
+            return
+        end
+    end
+    self:ShowList()
 end
 
 -- ----------------------------------------------------------------------
