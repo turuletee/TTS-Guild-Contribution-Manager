@@ -237,17 +237,33 @@ function UI:OpenMain()
         self:RefreshMain()
         return
     end
-    mainFrame = AceGUI:Create("Frame")
+    if not AceGUI then
+        TTSBT:Print("|cffff5555AceGUI-3.0 not loaded; cannot open UI|r")
+        return
+    end
+    local frame = AceGUI:Create("Frame")
+    if not frame then
+        TTSBT:Print("|cffff5555AceGUI failed to create main Frame|r")
+        return
+    end
+    mainFrame = frame
     mainFrame:SetTitle("TTS Bank Tracker")
     mainFrame:SetStatusText("Three Tank Strat - guild bank weekly contributions")
     mainFrame:SetWidth(900)
     mainFrame:SetHeight(620)
     mainFrame:SetCallback("OnClose", function() closeMain() end)
-    buildMainContents(mainFrame)
+    local ok, err = pcall(buildMainContents, mainFrame)
+    if not ok then
+        TTSBT:Print("|cffff5555UI build error:|r " .. tostring(err))
+    end
 end
 
 function UI:RefreshMain()
-    if mainFrame then buildMainContents(mainFrame) end
+    if not mainFrame then return end
+    local ok, err = pcall(buildMainContents, mainFrame)
+    if not ok then
+        TTSBT:Print("|cffff5555UI refresh error:|r " .. tostring(err))
+    end
 end
 
 function UI:ToggleMain()
@@ -260,6 +276,7 @@ end
 
 local pickerFrame = nil
 local pickerFilters = { rankIndex = nil, nameQuery = "" }
+local safeBuildPicker  -- forward declaration; assigned below
 
 local function closePicker()
     if pickerFrame then
@@ -273,7 +290,7 @@ local function buildPickerContents(frame)
     frame:ReleaseChildren()
     frame:SetLayout("List")
 
-    if not IsInGuild() then
+    if not TTSBT.Compat:IsInGuild() then
         local lbl = AceGUI:Create("Label")
         lbl:SetText("\n  You are not in a guild.")
         lbl:SetFullWidth(true)
@@ -290,21 +307,24 @@ local function buildPickerContents(frame)
     rankDropdown:SetLabel("Filter by rank")
     rankDropdown:SetWidth(220)
     local ranks = TP:GetRanks()
-    local rankList = { [-1] = "All ranks" }
-    local order = { -1 }
+    -- Use string keys so we don't depend on AceGUI handling negative
+    -- integer keys consistently. "ALL" is the sentinel for "no filter".
+    local rankList = { ALL = "All ranks" }
+    local order = { "ALL" }
     for _, r in ipairs(ranks) do
-        rankList[r.index] = string.format("[%d] %s", r.index, r.name)
-        table.insert(order, r.index)
+        local key = "rank" .. r.index
+        rankList[key] = string.format("[%d] %s", r.index, r.name)
+        table.insert(order, key)
     end
     rankDropdown:SetList(rankList, order)
-    rankDropdown:SetValue(pickerFilters.rankIndex or -1)
+    rankDropdown:SetValue(pickerFilters.rankIndex and ("rank" .. pickerFilters.rankIndex) or "ALL")
     rankDropdown:SetCallback("OnValueChanged", function(_, _, value)
-        if value == -1 then
+        if value == "ALL" then
             pickerFilters.rankIndex = nil
         else
-            pickerFilters.rankIndex = value
+            pickerFilters.rankIndex = tonumber((tostring(value)):match("rank(%-?%d+)"))
         end
-        buildPickerContents(frame)
+        safeBuildPicker(frame)
     end)
     filterRow:AddChild(rankDropdown)
 
@@ -314,7 +334,7 @@ local function buildPickerContents(frame)
     searchBox:SetText(pickerFilters.nameQuery or "")
     searchBox:SetCallback("OnEnterPressed", function(_, _, value)
         pickerFilters.nameQuery = value or ""
-        buildPickerContents(frame)
+        safeBuildPicker(frame)
     end)
     filterRow:AddChild(searchBox)
 
@@ -324,7 +344,7 @@ local function buildPickerContents(frame)
     refreshBtn:SetCallback("OnClick", function()
         TP:InvalidateRosterCache()
         TP:RequestRosterUpdate()
-        buildPickerContents(frame)
+        safeBuildPicker(frame)
     end)
     filterRow:AddChild(refreshBtn)
 
@@ -368,12 +388,28 @@ local function buildPickerContents(frame)
     frame:AddChild(statusLbl)
 end
 
+safeBuildPicker = function(frame)
+    local ok, err = pcall(buildPickerContents, frame)
+    if not ok then
+        TTSBT:Print("|cffff5555Picker build error:|r " .. tostring(err))
+    end
+end
+
 function UI:OpenPicker()
     if pickerFrame then
-        buildPickerContents(pickerFrame)
+        safeBuildPicker(pickerFrame)
         return
     end
-    pickerFrame = AceGUI:Create("Frame")
+    if not AceGUI then
+        TTSBT:Print("|cffff5555AceGUI-3.0 not loaded; cannot open picker|r")
+        return
+    end
+    local frame = AceGUI:Create("Frame")
+    if not frame then
+        TTSBT:Print("|cffff5555AceGUI failed to create picker Frame|r")
+        return
+    end
+    pickerFrame = frame
     pickerFrame:SetTitle("TTS Bank Tracker - Add Players")
     pickerFrame:SetStatusText("Pick which guild members to track")
     pickerFrame:SetWidth(640)
@@ -381,5 +417,5 @@ function UI:OpenPicker()
     pickerFrame:SetCallback("OnClose", function() closePicker() end)
     -- Make sure we have current roster data before drawing
     TTSBT.TrackedPlayers:RequestRosterUpdate()
-    buildPickerContents(pickerFrame)
+    safeBuildPicker(pickerFrame)
 end

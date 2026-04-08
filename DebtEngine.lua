@@ -52,13 +52,18 @@ end
 --   4. Zero
 function DebtEngine:GetMinForWeek(weekStart)
     local W = TTSBT.WeekEngine
+    if type(weekStart) ~= "number" then return TTSBT.db.profile.minContribution or 0 end
+    weekStart = W:GetWeekStart(weekStart)
     local hist = TTSBT.db.profile.weeklyHistory
     local firstWeek = TTSBT.db.profile.firstWeekStart
     local cursor = weekStart
-    while cursor and (not firstWeek or cursor >= firstWeek) do
+    -- Bound the walk so a corrupt firstWeek can't loop forever
+    local guard = 0
+    while cursor and (not firstWeek or cursor >= firstWeek) and guard < 520 do
         local week = hist[cursor]
-        if week and week.minimum then return week.minimum end
+        if week and type(week.minimum) == "number" then return week.minimum end
         cursor = W:AddWeeks(cursor, -1)
+        guard = guard + 1
     end
     return TTSBT.db.profile.minContribution or 0
 end
@@ -82,10 +87,12 @@ end
 -- ----------------------------------------------------------------------
 
 function DebtEngine:GetPaidForWeek(player, weekStart)
+    if not player or type(weekStart) ~= "number" then return 0 end
     local week = TTSBT.db.profile.weeklyHistory[weekStart]
-    if not week then return 0 end
-    return ((week.contributions and week.contributions[player]) or 0)
-         + ((week.manualMarks and week.manualMarks[player]) or 0)
+    if type(week) ~= "table" then return 0 end
+    local fromBank = (type(week.contributions) == "table" and week.contributions[player]) or 0
+    local fromMark = (type(week.manualMarks) == "table" and week.manualMarks[player]) or 0
+    return fromBank + fromMark
 end
 
 -- ----------------------------------------------------------------------
@@ -97,18 +104,23 @@ end
 -- Walks forward from firstWeekStart -> weekStart, accumulating.
 function DebtEngine:GetOwedAtStartOfWeek(player, weekStart)
     local W = TTSBT.WeekEngine
+    if not player or type(weekStart) ~= "number" then return 0 end
+    weekStart = W:GetWeekStart(weekStart)
     local firstWeek = TTSBT.db.profile.firstWeekStart
-    if not firstWeek or weekStart < firstWeek then return 0 end
+    if type(firstWeek) ~= "number" or weekStart < firstWeek then return 0 end
+    firstWeek = W:GetWeekStart(firstWeek)
 
     local owed = self:GetMinForWeek(firstWeek)
     if weekStart == firstWeek then return owed end
 
     local cursor = firstWeek
-    while cursor < weekStart do
+    local guard = 0
+    while cursor < weekStart and guard < 520 do
         local prevPaid = self:GetPaidForWeek(player, cursor)
         local prevUnpaid = math.max(0, owed - prevPaid)
         cursor = W:AddWeeks(cursor, 1)
         owed = math.floor(prevUnpaid * 1.5 + 0.5) + self:GetMinForWeek(cursor)
+        guard = guard + 1
     end
     return owed
 end

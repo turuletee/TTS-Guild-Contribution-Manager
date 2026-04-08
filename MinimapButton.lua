@@ -17,7 +17,7 @@ TTSBT.MinimapButton = MinimapButton
 local PLACEHOLDER_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
 local DATAOBJECT_NAME = "TTSBankTracker"
 
-local function buildTooltip(tooltip)
+local function buildTooltipUnsafe(tooltip)
     local D = TTSBT.DebtEngine
     local W = TTSBT.WeekEngine
     local TP = TTSBT.TrackedPlayers
@@ -45,6 +45,15 @@ local function buildTooltip(tooltip)
     tooltip:AddLine("|cff33ff99Right-click|r scan guild bank")
 end
 
+-- Wrap so a tooltip-build error never spams the user with Lua faults.
+local function buildTooltip(tooltip)
+    local ok, err = pcall(buildTooltipUnsafe, tooltip)
+    if not ok and tooltip and tooltip.AddLine then
+        tooltip:AddLine("|cffff5555TTS Bank Tracker tooltip error|r")
+        tooltip:AddLine(tostring(err), 1, 0.5, 0.5)
+    end
+end
+
 function MinimapButton:Initialize()
     if not LDB then
         TTSBT:Print("LibDataBroker-1.1 not loaded; minimap button disabled")
@@ -55,8 +64,10 @@ function MinimapButton:Initialize()
         return
     end
 
-    -- Create the data object (idempotent)
-    local dataObject = LDB:GetDataObjectByName(DATAOBJECT_NAME)
+    -- Create the data object (idempotent). GetDataObjectByName has been
+    -- in LDB since the beginning, but defensively fall back to nil-check
+    -- in case a stripped version of the lib is in the addon stack.
+    local dataObject = LDB.GetDataObjectByName and LDB:GetDataObjectByName(DATAOBJECT_NAME) or nil
     if not dataObject then
         dataObject = LDB:NewDataObject(DATAOBJECT_NAME, {
             type = "launcher",
