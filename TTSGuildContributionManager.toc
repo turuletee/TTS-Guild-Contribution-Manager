@@ -8,6 +8,7 @@
 ## X-Category: Guild
 ## X-Website: https://github.com/turuletee/TTS-Guild-Contribution-Manager
 ## X-License: All Rights Reserved
+## X-Curse-Project-ID: 1508679
 
 Libs\embeds.xml
 
