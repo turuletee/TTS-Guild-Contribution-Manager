@@ -2,7 +2,7 @@
 ## Title: TTS Guild Contribution Manager
 ## Notes: Track weekly guild bank contributions and raid attendance/DKP for your raid team. Two trackers in one addon: Consumable Contribution (auto-scans guild bank deposits, compounding 1.5x penalty, hiatus mode) and Assistance Tracking (per-raid-day attendance grid, automatic DKP and gold fines, /raid chat broadcasting).
 ## Author: Nachorizo
-## Version: 1.0.3
+## Version: @project-version@
 ## SavedVariables: TTSGuildContributionManagerDB
 ## IconTexture: Interface\AddOns\TTSGuildContributionManager\Media\icon.tga
 ## X-Category: Guild
